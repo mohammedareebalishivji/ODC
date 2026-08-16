@@ -20,6 +20,7 @@ export default function AppShell() {
   usePushRegister();
 
   const loadMine = useCallback(async () => {
+    if (!user) return;
     try {
       const data = await api('/api/shifts/my');
       setMine(data);
@@ -33,14 +34,15 @@ export default function AppShell() {
         setExpiringShift(pending || null);
       }
     } catch {}
-  }, [isManager]);
+  }, [isManager, user]);
 
   const loadNotifs = useCallback(async () => {
+    if (!user) return;
     try {
       const data = await api('/api/me/notifications');
       setUnread(data.notifications.filter((n) => !n.read).length);
     } catch {}
-  }, []);
+  }, [user]);
 
   useEffect(() => { loadMine(); loadNotifs(); }, [loadMine, loadNotifs]);
   useEffect(() => {

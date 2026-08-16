@@ -9,10 +9,10 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 reap_stale() {
   local pid cwd
   for port in 4000 5173; do
-    if [ -z "$(lsof -ti tcp:$port 2>/dev/null)" ]; then
+    if [ -z "$(lsof -ti tcp:$port -sTCP:LISTEN 2>/dev/null)" ]; then
       continue
     fi
-    for pid in $(lsof -ti tcp:$port 2>/dev/null); do
+    for pid in $(lsof -ti tcp:$port -sTCP:LISTEN 2>/dev/null); do
       # lsof -d cwd reports the process's working directory
       cwd="$(lsof -a -p "$pid" -d cwd -Fn 2>/dev/null | sed -n 's/^n//p' || true)"
       case "$cwd" in

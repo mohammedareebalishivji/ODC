@@ -49,7 +49,7 @@ if (DEV) {
   const n = seedDemo();
   if (n) console.log(`[seed] Created ${n} demo account(s).`);
   seedTestAccounts();
-  console.log('[seed] Test accounts ready: manager / chef / waiter (password: Test@1234).');
+  console.log('[seed] Test accounts ready: manager / chef / waiter / superadmin (password: Test@1234).');
 }
 
 const server = app.listen(PORT, () => {

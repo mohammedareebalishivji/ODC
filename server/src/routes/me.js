@@ -2,13 +2,14 @@ import { Router } from 'express';
 import { db, audit } from '../db.js';
 import { authGuard, asyncH } from '../middleware.js';
 import { nowIso, uid, apiError, DEV } from '../config.js';
-import { hashToken, randomToken } from '../security.js';
+import { hashToken, randomToken, generateTotpSecret, verifyTotp } from '../security.js';
 import { getVapidPublicKey, configurePush } from '../notify.js';
-import { hashPassword, assertStrongPassword, serializeUser } from '../auth.js';
+import { hashPassword, verifyPassword, assertStrongPassword, serializeUser, generateOtp, verifyOtp } from '../auth.js';
 
 const router = Router();
 
 const clean = (v, max = 2000) => (typeof v === 'string' ? v.trim().slice(0, max) : '');
+const cleanPhone = (v) => String(v || '').replace(/[^0-9+]/g, '').slice(0, 16);
 
 const SPECIALTIES = [
   'Tandoor', 'Chinese', 'Continental', 'Italian', 'Bakery/Pastry',
@@ -178,6 +179,100 @@ router.post('/availability', authGuard(['chef', 'waiter']), asyncH(async (req, r
   db.prepare(`UPDATE users SET available = ?, updated_at = ? WHERE id = ?`).run(available ? 1 : 0, nowIso(), req.user.id);
   audit('availability', available ? 'Marked self Free Now' : 'Marked self Not Available', req.user.id);
   res.json({ available });
+}));
+
+const PIN_RULES = 'Use 4–8 letters or numbers (no spaces or symbols).';
+const requiredPassword = (req) => {
+  if (!verifyPassword(String(req.body.currentPassword || ''), req.user.password_hash)) {
+    throw apiError('Your current password is not correct.');
+  }
+};
+
+router.post('/pin', authGuard(), asyncH(async (req, res) => {
+  const pin = clean(String(req.body.pin || ''), 8);
+  if (!/^[A-Za-z0-9]{4,8}$/.test(pin)) throw apiError(PIN_RULES);
+  requiredPassword(req);
+  db.prepare(`UPDATE users SET login_pin = ?, pin_enabled = 1, updated_at = ? WHERE id = ?`).run(hashToken(pin), nowIso(), req.user.id);
+  audit('pin_set', 'Personal login PIN set', req.user.id);
+  res.json({ user: serializeUser(db.prepare(`SELECT * FROM users WHERE id = ?`).get(req.user.id)) });
+}));
+
+router.post('/pin/clear', authGuard(), asyncH(async (req, res) => {
+  requiredPassword(req);
+  db.prepare(`UPDATE users SET login_pin = NULL, pin_enabled = 0, updated_at = ? WHERE id = ?`).run(nowIso(), req.user.id);
+  audit('pin_cleared', 'Personal login PIN removed', req.user.id);
+  res.json({ user: serializeUser(db.prepare(`SELECT * FROM users WHERE id = ?`).get(req.user.id)) });
+}));
+
+router.post('/email', authGuard(), asyncH(async (req, res) => {
+  requiredPassword(req);
+  const email = clean(String(req.body.email || ''), 254).toLowerCase();
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw apiError('That email address does not look right.');
+  const dupe = db.prepare(`SELECT id FROM users WHERE email = ? AND id != ?`).get(email, req.user.id);
+  if (dupe) throw apiError('That email is already used by another account.');
+  db.prepare(`UPDATE users SET email = ?, updated_at = ? WHERE id = ?`).run(email, nowIso(), req.user.id);
+  audit('email_changed', `Email changed to ${email}`, req.user.id);
+  res.json({ user: serializeUser(db.prepare(`SELECT * FROM users WHERE id = ?`).get(req.user.id)) });
+}));
+
+router.post('/phone/request', authGuard(), asyncH(async (req, res) => {
+  requiredPassword(req);
+  const phone = cleanPhone(req.body.newPhone);
+  if (!/^\+?[0-9]{8,15}$/.test(phone)) throw apiError('Please enter a valid phone number.');
+  const dupe = db.prepare(`SELECT id FROM users WHERE phone = ? AND id != ?`).get(phone, req.user.id);
+  if (dupe) throw apiError('That phone number is already registered to another account.');
+  const devCode = generateOtp(phone, 'phone_change');
+  audit('phone_change_request', `Phone change requested to ${phone}`, req.user.id);
+  res.json({ message: 'We sent a code to the new number.' + (devCode ? ` Dev code: ${devCode}` : ''), devCode });
+}));
+
+router.post('/phone/confirm', authGuard(), asyncH(async (req, res) => {
+  const phone = cleanPhone(req.body.newPhone);
+  const code = String(req.body.code || '').trim();
+  const r = verifyOtp(phone, 'phone_change', code);
+  if (!r.ok) throw apiError(r.reason);
+  db.prepare(`UPDATE users SET phone = ?, updated_at = ? WHERE id = ?`).run(phone, nowIso(), req.user.id);
+  audit('phone_changed', `Phone changed to ${phone}`, req.user.id);
+  res.json({ user: serializeUser(db.prepare(`SELECT * FROM users WHERE id = ?`).get(req.user.id)) });
+}));
+
+function otpauthUri(email, secret) {
+  const label = encodeURIComponent(`${email || 'user@odc.in'}`);
+  return `otpauth://totp/O.D.C:${label}?secret=${encodeURIComponent(secret)}&issuer=O.D.C&algorithm=SHA1&digits=6&period=30`;
+}
+
+router.post('/totp/setup', authGuard(), asyncH(async (req, res) => {
+  const u = db.prepare(`SELECT * FROM users WHERE id = ?`).get(req.user.id);
+  if (u.totp_secret && u.totp_enabled) throw apiError('Authenticator is already on. Disable it first to change the secret.');
+  requiredPassword(req);
+  const secret = u.totp_secret || generateTotpSecret();
+  db.prepare(`UPDATE users SET totp_secret = ?, totp_enabled = 0, updated_at = ? WHERE id = ?`).run(secret, nowIso(), u.id);
+  audit('totp_setup', 'Authenticator setup started', req.user.id);
+  res.json({ secret, otpauth: otpauthUri(u.email, secret) });
+}));
+
+router.post('/totp/confirm', authGuard(), asyncH(async (req, res) => {
+  const u = db.prepare(`SELECT * FROM users WHERE id = ?`).get(req.user.id);
+  if (!u.totp_secret) throw apiError('Start the authenticator setup first.');
+  if (u.totp_enabled) throw apiError('Authenticator is already on.');
+  if (!verifyTotp(u.totp_secret, String(req.body.code || '').trim())) {
+    throw apiError("That code didn't match your authenticator app — try again.");
+  }
+  db.prepare(`UPDATE users SET totp_enabled = 1, updated_at = ? WHERE id = ?`).run(nowIso(), u.id);
+  audit('totp_enabled', 'Authenticator 2FA enabled', req.user.id);
+  res.json({ user: serializeUser(db.prepare(`SELECT * FROM users WHERE id = ?`).get(u.id)) });
+}));
+
+router.post('/totp/disable', authGuard(), asyncH(async (req, res) => {
+  const u = db.prepare(`SELECT * FROM users WHERE id = ?`).get(req.user.id);
+  if (!u.totp_enabled) throw apiError('Authenticator is not on.');
+  requiredPassword(req);
+  if (!verifyTotp(u.totp_secret, String(req.body.code || '').trim())) {
+    throw apiError("That code didn't match your authenticator app — try again.");
+  }
+  db.prepare(`UPDATE users SET totp_secret = NULL, totp_enabled = 0, updated_at = ? WHERE id = ?`).run(nowIso(), u.id);
+  audit('totp_disabled', 'Authenticator 2FA disabled', req.user.id);
+  res.json({ user: serializeUser(db.prepare(`SELECT * FROM users WHERE id = ?`).get(u.id)) });
 }));
 
 router.post('/delete-account', authGuard(), asyncH(async (req, res) => {

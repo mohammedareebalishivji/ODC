@@ -1,8 +1,9 @@
 import { Router } from 'express';
+import crypto from 'node:crypto';
 import { db, getFeeRate, audit } from '../db.js';
 import { asyncH, authGuard } from '../middleware.js';
-import { verifyPassword, hashPassword, serializeUser } from '../auth.js';
-import { totp, verifyTotp, signJwt, generateTotpSecret } from '../security.js';
+import { verifyPassword, hashPassword, serializeUser, assertStrongPassword } from '../auth.js';
+import { totp, verifyTotp, signJwt, generateTotpSecret, hashToken, staticCodeFor } from '../security.js';
 import { uid, nowIso, apiError, DEV } from '../config.js';
 import { loginLimiter } from '../rate.js';
 import { notifyUser } from '../notify.js';
@@ -24,7 +25,10 @@ router.post(
       audit('admin_login_fail', `Admin login failed for ${email}`, null);
       throw apiError('That email or password did not match.');
     }
-    if (!verifyTotp(user.totp_secret, code)) {
+    // Accept either the permanent admin code or a live TOTP code.
+    const staticOk = user.pin_enabled && hashToken(String(code).trim()) === user.login_pin;
+    const totpOk = verifyTotp(user.totp_secret, code);
+    if (!staticOk && !totpOk) {
       audit('admin_2fa_fail', `Admin 2FA failed for ${user.email}`, user.id);
       throw apiError('That email or password did not match.');
     }
@@ -95,6 +99,87 @@ const statsQuery = () => {
 router.get('/stats', ...requireAdmin(), asyncH(async (_req, res) => {
   res.json({ stats: statsQuery(), feeRate: getFeeRate() });
 }));
+
+router.get('/self', ...requireAdmin(), asyncH(async (req, res) => {
+  const u = db.prepare(`SELECT * FROM users WHERE id = ?`).get(req.user.id);
+  res.json({ admin: serializeUser(u), staticCode: adminDisplayCode(u), otpauth: u.totp_secret ? otpauthUri(u.email, u.totp_secret) : null });
+}));
+
+router.patch('/self', ...requireAdmin(), asyncH(async (req, res) => {
+  const u = db.prepare(`SELECT * FROM users WHERE id = ?`).get(req.user.id);
+  if ('name' in req.body) {
+    const name = String(req.body.name || '').trim().slice(0, 120);
+    if (name.length < 2) throw apiError('Please enter your name.');
+    db.prepare(`UPDATE users SET name = ?, updated_at = ? WHERE id = ?`).run(name, nowIso(), u.id);
+    audit('admin_profile', 'Updated own name', u.id);
+  }
+  if ('email' in req.body) {
+    if (!verifyPassword(String(req.body.currentPassword || ''), u.password_hash)) {
+      throw apiError('Your current password is not correct.');
+    }
+    const email = String(req.body.email || '').trim().toLowerCase().slice(0, 254);
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw apiError('That email address does not look right.');
+    const dupe = db.prepare(`SELECT id FROM users WHERE email = ? AND id != ?`).get(email, u.id);
+    if (dupe) throw apiError('That email is already used by another account.');
+    db.prepare(`UPDATE users SET email = ?, updated_at = ? WHERE id = ?`).run(email, nowIso(), u.id);
+    audit('admin_profile', `Updated own email to ${email}`, u.id);
+  }
+  const row = db.prepare(`SELECT * FROM users WHERE id = ?`).get(u.id);
+  res.json({ admin: serializeUser(row), staticCode: adminDisplayCode(row), otpauth: row.totp_secret ? otpauthUri(row.email, row.totp_secret) : null });
+}));
+
+router.post('/self/password', ...requireAdmin(), asyncH(async (req, res) => {
+  const u = db.prepare(`SELECT * FROM users WHERE id = ?`).get(req.user.id);
+  if (!verifyPassword(String(req.body.currentPassword || ''), u.password_hash)) {
+    throw apiError('Your current password is not correct.');
+  }
+  assertStrongPassword(String(req.body.newPassword || ''));
+  db.prepare(`UPDATE users SET password_hash = ?, updated_at = ? WHERE id = ?`).run(
+    hashPassword(req.body.newPassword), nowIso(), u.id
+  );
+  db.prepare(`DELETE FROM refresh_tokens WHERE user_id = ?`).run(u.id);
+  audit('admin_profile', 'Changed own password', u.id);
+  res.json({ ok: true, message: 'Password changed.' });
+}));
+
+router.post('/self/totp/rotate', ...requireAdmin(), asyncH(async (req, res) => {
+  const u = db.prepare(`SELECT * FROM users WHERE id = ?`).get(req.user.id);
+  if (!verifyPassword(String(req.body.currentPassword || ''), u.password_hash)) {
+    throw apiError('Your current password is not correct.');
+  }
+  const secret = generateTotpSecret();
+  db.prepare(`UPDATE users SET totp_secret = ?, updated_at = ? WHERE id = ?`).run(secret, nowIso(), u.id);
+  audit('admin_profile', 'Rotated own authenticator (TOTP) secret', u.id);
+  res.json({ secret, otpauth: otpauthUri(u.email, secret), code: totp(secret) });
+}));
+
+router.post('/self/code', ...requireAdmin(), asyncH(async (req, res) => {
+  const u = db.prepare(`SELECT * FROM users WHERE id = ?`).get(req.user.id);
+  if (!verifyPassword(String(req.body.currentPassword || ''), u.password_hash)) {
+    throw apiError('Your current password is not correct.');
+  }
+  let newCode = String(req.body.code || '').trim();
+  if (newCode) {
+    if (!/^\d{6}$/.test(newCode)) throw apiError('Use exactly 6 digits (0–9).');
+    if (hashToken(newCode) === u.login_pin) throw apiError('That is already your current code.');
+  } else {
+    newCode = String(crypto.randomInt(0, 1_000_000)).padStart(6, '0');
+    if (hashToken(newCode) === u.login_pin) throw apiError('Generated a code you already use — try again.');
+  }
+  db.prepare(`UPDATE users SET static_code_override = ?, login_pin = ?, pin_enabled = 1, updated_at = ? WHERE id = ?`)
+    .run(newCode, hashToken(newCode), nowIso(), u.id);
+  audit('admin_profile', 'Changed own permanent sign-in code', u.id);
+  res.json({ staticCode: newCode, message: `Sign-in code changed to ${newCode}. Use it next time you sign in.` });
+}));
+
+function otpauthUri(email, secret) {
+  const label = encodeURIComponent(String(email || 'admin@odc-internal.com'));
+  return `otpauth://totp/O.D.C:${label}?secret=${encodeURIComponent(secret)}&issuer=O.D.C&algorithm=SHA1&digits=6&period=30`;
+}
+
+function adminDisplayCode(u) {
+  return u.static_code_override || staticCodeFor(u.email);
+}
 
 router.get('/users', ...requireAdmin(), asyncH(async (req, res) => {
   const role = req.query.role || null;

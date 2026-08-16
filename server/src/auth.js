@@ -117,6 +117,8 @@ export function serializeUser(u) {
     verifiedBadge: !!u.verified_badge,
     photo: u.photo_data,
     available: !!u.available,
+    pinEnabled: !!u.pin_enabled,
+    totpEnabled: u.role === 'admin' ? !!u.totp_secret : !!u.totp_enabled,
     createdAt: u.created_at,
   };
 }

@@ -71,3 +71,8 @@ function totpForWindow(secret, windowOffset, windowSeconds = 30) {
 export function generateTotpSecret() {
   return crypto.randomBytes(20).toString('base64');
 }
+
+// Default 6-digit admin code. Admins can change it from "My account".
+export function staticCodeFor(email) {
+  return '000000';
+}

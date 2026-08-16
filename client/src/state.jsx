@@ -25,6 +25,7 @@ export function AuthProvider({ children }) {
   const refreshing = useRef(null);
 
   const persist = useCallback((t, u) => {
+    try { window.__log && window.__log('persist', t ? 'tokens=SET' : 'tokens=NULL', u ? 'user=SET' : 'user=NULL'); } catch {}
     setTokens(t);
     setUser(u);
     if (t) localStorage.setItem(LS_KEY, JSON.stringify(t));
@@ -57,13 +58,16 @@ export function AuthProvider({ children }) {
 
   const authFn = useMemo(
     () => ({
-      async login(identifier, password, device) {
+      async login(identifier, password, challenge = '', device = 'web') {
         const data = await api('/api/auth/login', {
           method: 'POST',
-          body: JSON.stringify({ identifier, password, device }),
+          body: JSON.stringify({ identifier, password, device, pin: challenge, code: challenge }),
         });
+        if (data.step === 'challenge') {
+          return { needs2fa: true, user: data.user };
+        }
         persist({ accessToken: data.accessToken, refreshToken: data.refreshToken }, data.user);
-        return data.user;
+        return { needs2fa: false, user: data.user };
       },
       async finalizeSignup(phone, code) {
         const data = await api('/api/auth/verify', {
@@ -90,9 +94,23 @@ export function AuthProvider({ children }) {
   }, [persist]);
 
   useEffect(() => {
+    const onStorage = (e) => {
+      if (e.key === LS_KEY) {
+        try { setTokens(e.newValue ? JSON.parse(e.newValue) : null); } catch { setTokens(null); }
+      }
+      if (e.key === USER_KEY) {
+        try { setUser(e.newValue ? JSON.parse(e.newValue) : null); } catch { setUser(null); }
+      }
+    };
+    window.addEventListener('storage', onStorage);
+    return () => window.removeEventListener('storage', onStorage);
+  }, []);
+
+  useEffect(() => {
     (async () => {
       let done = false;
       if (tokens && tokens.accessToken) {
+        try { window.__log && window.__log('boot effect', 'tokens=' + (tokens ? 'SET' : 'NULL'), 'access=' + (tokens && tokens.accessToken ? 'SET' : 'NULL')); } catch {}
         try {
           const data = await api('/api/me', {});
           setUser(data.user);
@@ -126,8 +144,8 @@ export function AuthProvider({ children }) {
   );
 
   const storeObj = useMemo(
-    () => ({ getTokens: () => tokens, refresh: () => { if (!refreshing.current) refreshing.current = refresh().finally(() => (refreshing.current = null)); return refreshing.current; } }),
-    [tokens, refresh]
+    () => ({ getTokens: () => tokens, refresh: () => { if (!refreshing.current) refreshing.current = refresh().finally(() => (refreshing.current = null)); return refreshing.current; }, forceLogout: () => persist(null, null) }),
+    [tokens, refresh, persist]
   );
   setAuthStore(storeObj);
 

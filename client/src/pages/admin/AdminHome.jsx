@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Icon } from '../../icons';
-import { Button, Pill, Field, TextArea, toast } from '../../ui';
+import { Button, Pill, Field, TextArea, TextInput, toast } from '../../ui';
 
 const API = '/tail/z7k9x2/admin';
 
@@ -97,6 +97,7 @@ export default function AdminHome() {
     ['revenue', 'Earnings & Fee', 'Rupee'],
     ['announce', 'Announcements', 'Bolt'],
     ['logs', 'Audit log', 'Eye'],
+    ['profile', 'My account', 'Shield'],
   ];
 
   return (
@@ -143,6 +144,7 @@ export default function AdminHome() {
           </div>
         )}
         {tab === 'logs' && <Logs logs={logs} />}
+        {tab === 'profile' && <ProfileTab API={API} token={token} onLogout={logout} />}
       </main>
     </div>
   );
@@ -315,6 +317,192 @@ function Revenue({ fees, feeRate, setFeeRate, onSave }) {
       </div>
     </>
   );
+}
+
+function ProfileTab({ API, token, onLogout }) {
+  const [admin, setAdmin] = useState(null);
+  const [staticCode, setStaticCode] = useState('');
+  const [name, setName] = useState('');
+  const [email, setEmail] = useState('');
+  const [pw, setPw] = useState({ current: '', next: '', again: '' });
+  const [rot, setRot] = useState({ pw: '', secret: null });
+  const [codePw, setCodePw] = useState('');
+  const [newCode, setNewCode] = useState('');
+  const [customCode, setCustomCode] = useState('');
+  const [busy, setBusy] = useState(false);
+  const hdr = { headers: { Authorization: `Bearer ${token}` } };
+  const jhdr = (body) => ({ method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` }, body: JSON.stringify(body) });
+
+  const load = useCallback(async () => {
+    try {
+      const r = await fetch(`${API}/self`, hdr);
+      if (r.ok) {
+        const d = await r.json();
+        setAdmin(d.admin);
+        setStaticCode(d.staticCode);
+        setName(d.admin.name || '');
+        setEmail(d.admin.email || '');
+      }
+    } catch {}
+  }, [API, token]);
+
+  useEffect(() => { load(); }, [load]);
+
+  if (!admin) return <Loading />;
+
+  const saveName = async () => {
+    if (!name.trim()) { toast('Enter your name.', 'red'); return; }
+    setBusy(true);
+    try {
+      const r = await fetch(`${API}/self`, { method: 'PATCH', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` }, body: JSON.stringify({ name }) });
+      const d = await r.json();
+      if (d.admin) setAdmin(d.admin);
+      toast('Name updated.', 'green');
+    } catch { toast('Could not save.', 'red'); }
+    finally { setBusy(false); }
+  };
+
+  const saveEmail = async () => {
+    if (!pw.current) { toast('Enter your current password.', 'red'); return; }
+    setBusy(true);
+    try {
+      const r = await fetch(`${API}/self`, { method: 'PATCH', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` }, body: JSON.stringify({ email, currentPassword: pw.current }) });
+      const d = await r.json();
+      if (d.error) throw new Error(d.error);
+      setAdmin(d.admin);
+      setPw((p) => ({ ...p, current: '' }));
+      toast('Email updated.', 'green');
+    } catch (ex) { toast(ex.message || 'Could not save.', 'red'); }
+    finally { setBusy(false); }
+  };
+
+  const changePassword = async () => {
+    if (pw.next !== pw.again) { toast('New passwords do not match.', 'red'); return; }
+    setBusy(true);
+    try {
+      const r = await fetch(`${API}/self/password`, jhdr({ currentPassword: pw.current, newPassword: pw.next }));
+      const d = await r.json();
+      if (d.error) throw new Error(d.error);
+      toast('Password changed. Use it on next login.', 'green');
+      setPw({ current: '', next: '', again: '' });
+    } catch (ex) { toast(ex.message || 'Could not change.', 'red'); }
+    finally { setBusy(false); }
+  };
+
+  const rotateTotp = async () => {
+    if (!rot.pw) { toast('Enter your current password.', 'red'); return; }
+    setBusy(true);
+    try {
+      const r = await fetch(`${API}/self/totp/rotate`, jhdr({ currentPassword: rot.pw }));
+      const d = await r.json();
+      if (d.error) throw new Error(d.error);
+      setRot({ pw: '', secret: d });
+      toast('New authenticator key generated. Add it to your app now.', 'green');
+    } catch (ex) { toast(ex.message || 'Could not rotate.', 'red'); }
+    finally { setBusy(false); }
+  };
+
+  const changeCode = async (code) => {
+    if (!codePw) { toast('Enter your current password.', 'red'); return; }
+    if (code && !/^\d{6}$/.test(code)) { toast('Code must be exactly 6 digits.', 'red'); return; }
+    setBusy(true);
+    try {
+      const r = await fetch(`${API}/self/code`, jhdr({ currentPassword: codePw, code }));
+      const d = await r.json();
+      if (d.error) throw new Error(d.error);
+      setStaticCode(d.staticCode);
+      setNewCode(d.staticCode);
+      setCodePw('');
+      setCustomCode('');
+      toast(d.message || 'Sign-in code changed.', 'green');
+    } catch (ex) { toast(ex.message || 'Could not change.', 'red'); }
+    finally { setBusy(false); }
+  };
+
+  return (
+    <>
+      <h2 className="admin-title">My account</h2>
+      <div className="grid2">
+        <div className="admin-card">
+          <h3 className="mb12">Profile</h3>
+          <div className="flex" style={{ gap: 8, alignItems: 'center', marginBottom: 14 }}>
+            <div className="avatar" style={{ width: 56, height: 56 }}>{admin.name.slice(0, 1).toUpperCase()}</div>
+            <div>
+              <div style={{ fontWeight: 800, fontSize: 17 }}>{admin.name}</div>
+              <div className="small muted">{admin.email || 'No email'}{admin.phone ? ` · ${admin.phone}` : ''}</div>
+              <div style={{ marginTop: 4 }}><Pill tone="accent">Super admin</Pill></div>
+            </div>
+          </div>
+          <Field label="Name"><TextInput value={name} onChange={(e) => setName(e.target.value)} /></Field>
+          <Button size="md" icon={<Icon name="Check" size={16} />} onClick={saveName} disabled={busy}>Save name</Button>
+
+          <hr style={{ border: 0, borderTop: '1px solid var(--line)', margin: '18px 0' }} />
+          <Field label="Email"><TextInput value={email} onChange={(e) => setEmail(e.target.value)} /></Field>
+          <Field label="Current password"><TextInput type="password" value={pw.current} onChange={(e) => setPw({ ...pw, current: e.target.value })} autoComplete="current-password" /></Field>
+          <Button size="md" icon={<Icon name="Check" size={16} />} onClick={saveEmail} disabled={busy}>Save email</Button>
+
+          <p className="small muted mt16">Account created {new Date(admin.createdAt).toLocaleDateString()}</p>
+        </div>
+
+        <div className="stack">
+          <div className="admin-card">
+            <h3 className="mb12">Password</h3>
+            <Field label="Current password"><TextInput type="password" value={pw.current} onChange={(e) => setPw({ ...pw, current: e.target.value })} autoComplete="current-password" /></Field>
+            <Field label="New password"><TextInput type="password" value={pw.next} onChange={(e) => setPw({ ...pw, next: e.target.value })} autoComplete="new-password" /></Field>
+            <Field label="Repeat new password"><TextInput type="password" value={pw.again} onChange={(e) => setPw({ ...pw, again: e.target.value })} autoComplete="new-password" /></Field>
+            <Button size="md" variant="danger" onClick={changePassword} disabled={busy}>Change password</Button>
+          </div>
+
+          <div className="admin-card">
+            <h3 className="mb12">Sign-in code</h3>
+            <div className="flex mb12" style={{ gap: 8, alignItems: 'center' }}>
+              <Pill tone="green">Permanent</Pill>
+              <span className="small muted">Your admin code never changes. Use it on the sign-in screen.</span>
+            </div>
+            <p className="small muted">6-digit code</p>
+            <div className="code-box" style={{ fontSize: 22, letterSpacing: 8, fontWeight: 800 }}>{staticCode}</div>
+            {newCode ? (
+              <BannerNote>Your new code is <b>{newCode}</b> — write it down. It takes effect next time you sign in.</BannerNote>
+            ) : null}
+            <Field label="Set your own 6-digit code (optional)">
+              <TextInput value={customCode} inputMode="numeric" maxLength={6} onChange={(e) => setCustomCode(e.target.value.replace(/\D/g, ''))} placeholder="e.g. 123456" style={{ letterSpacing: '4px' }} />
+            </Field>
+            <Field label="Current password (to change the code)">
+              <TextInput type="password" value={codePw} onChange={(e) => setCodePw(e.target.value)} autoComplete="current-password" />
+            </Field>
+            <div className="flex" style={{ gap: 8 }}>
+              <Button size="md" onClick={() => changeCode(customCode)} disabled={busy || !codePw || customCode.length !== 6}>Set this code</Button>
+              <Button size="md" variant="ghost" onClick={() => changeCode('')} disabled={busy || !codePw}>Generate random</Button>
+            </div>
+            <p className="small muted mt12">Optional: an authenticator app can be set on top of it. Rotating the key only affects the authenticator, never this code.</p>
+            {rot.secret ? (
+              <>
+                <BannerNote>Scan or enter the new key below — the old one no longer works.</BannerNote>
+                <p className="small muted">Secret</p>
+                <div className="code-box">{rot.secret.secret}</div>
+                <p className="small muted">otpauth URI (manual entry)</p>
+                <div className="code-box" style={{ wordBreak: 'break-all' }}>{rot.secret.otpauth}</div>
+                <p className="small muted">Authenticator code right now (optional, rotating): <b>{rot.secret.code}</b></p>
+              </>
+            ) : (
+              <Field label="Current password"><TextInput type="password" value={rot.pw} onChange={(e) => setRot({ ...rot, pw: e.target.value })} autoComplete="current-password" /></Field>
+            )}
+            <Button size="md" icon={<Icon name="Shield" size={16} />} className="mt12" onClick={rotateTotp} disabled={busy}>{rot.secret ? 'Generate another key' : 'Rotate authenticator key'}</Button>
+          </div>
+
+          <div className="admin-card">
+            <h3 className="mb12">Session</h3>
+            <p className="small muted mb12">Sign out of this dashboard. You\u2019ll need your password and authenticator code to get back in.</p>
+            <Button size="md" onClick={onLogout}><Icon name="Arrow" size={16} /> Sign out</Button>
+          </div>
+        </div>
+      </div>
+    </>
+  );
+}
+
+function BannerNote({ children }) {
+  return <div className="banner banner-warn mb12">{children}</div>;
 }
 
 function Logs({ logs }) {

@@ -31,6 +31,14 @@ export default function Profile() {
   const [pw, setPw] = useState({ current: '', next: '', again: '' });
   const [delOpen, setDelOpen] = useState(false);
   const [delPw, setDelPw] = useState('');
+  const [pin, setPin] = useState({ currentPassword: '', value: '', again: '' });
+  const [pinBusy, setPinBusy] = useState(false);
+  const [otpSetup, setOtpSetup] = useState(null);
+  const [otpEnable, setOtpEnable] = useState({ currentPassword: '', code: '' });
+  const [otpDisable, setOtpDisable] = useState({ currentPassword: '', code: '' });
+  const [otpBusy, setOtpBusy] = useState(false);
+  const [contact, setContact] = useState({ email: '', pw: '', newPhone: '', code: '', devCode: '', phoneStep: 'idle' });
+  const [contactBusy, setContactBusy] = useState(false);
 
   const set = (k, v) => setForm((f) => ({ ...f, [k]: v }));
 
@@ -94,6 +102,96 @@ export default function Profile() {
       readSessions();
       toast('Session signed out.');
     } catch (ex) { toast(ex.message, 'red'); }
+  };
+
+  const savePin = async () => {
+    if (pin.value !== pin.again) { toast('PINs do not match.', 'red'); return; }
+    setPinBusy(true);
+    try {
+      const d = await api('/api/me/pin', { method: 'POST', body: JSON.stringify({ currentPassword: pin.currentPassword, pin: pin.value }) });
+      updateUser(d.user);
+      setPin({ currentPassword: '', value: '', again: '' });
+      toast('Sign-in PIN set. You will use it on your next login.');
+    } catch (ex) { toast(ex.message, 'red'); }
+    finally { setPinBusy(false); }
+  };
+
+  const clearPin = async () => {
+    setPinBusy(true);
+    try {
+      const d = await api('/api/me/pin/clear', { method: 'POST', body: JSON.stringify({ currentPassword: pin.currentPassword }) });
+      updateUser(d.user);
+      setPin({ currentPassword: '', value: '', again: '' });
+      toast('Sign-in PIN removed.');
+    } catch (ex) { toast(ex.message, 'red'); }
+    finally { setPinBusy(false); }
+  };
+
+  const startTotp = async () => {
+    setOtpBusy(true);
+    try {
+      const d = await api('/api/me/totp/setup', { method: 'POST', body: JSON.stringify({ currentPassword: otpEnable.currentPassword }) });
+      setOtpSetup(d);
+      setOtpEnable((o) => ({ ...o, currentPassword: '' }));
+    } catch (ex) { toast(ex.message, 'red'); }
+    finally { setOtpBusy(false); }
+  };
+
+  const confirmTotp = async () => {
+    setOtpBusy(true);
+    try {
+      const d = await api('/api/me/totp/confirm', { method: 'POST', body: JSON.stringify({ code: otpEnable.code }) });
+      updateUser(d.user);
+      setOtpSetup(null);
+      setOtpEnable({ currentPassword: '', code: '' });
+      toast('Authenticator is on. Your sign-in now asks for this code.');
+    } catch (ex) { toast(ex.message, 'red'); }
+    finally { setOtpBusy(false); }
+  };
+
+  const disableTotp = async () => {
+    setOtpBusy(true);
+    try {
+      const d = await api('/api/me/totp/disable', { method: 'POST', body: JSON.stringify(otpDisable) });
+      updateUser(d.user);
+      setOtpDisable({ currentPassword: '', code: '' });
+      toast('Authenticator turned off.');
+    } catch (ex) { toast(ex.message, 'red'); }
+    finally { setOtpBusy(false); }
+  };
+
+  const saveEmail = async () => {
+    if (!contact.pw) { toast('Enter your current password.', 'red'); return; }
+    setContactBusy(true);
+    try {
+      const d = await api('/api/me/email', { method: 'POST', body: JSON.stringify({ currentPassword: contact.pw, email: contact.email }) });
+      updateUser(d.user);
+      setContact({ ...contact, pw: '', email: '' });
+      toast('Email updated.');
+    } catch (ex) { toast(ex.message, 'red'); }
+    finally { setContactBusy(false); }
+  };
+
+  const requestPhone = async () => {
+    if (!contact.pw) { toast('Enter your current password.', 'red'); return; }
+    setContactBusy(true);
+    try {
+      const d = await api('/api/me/phone/request', { method: 'POST', body: JSON.stringify({ currentPassword: contact.pw, newPhone: contact.newPhone }) });
+      setContact({ ...contact, devCode: d.devCode || '', phoneStep: 'code' });
+      toast(d.message || 'Code sent to the new number.');
+    } catch (ex) { toast(ex.message, 'red'); }
+    finally { setContactBusy(false); }
+  };
+
+  const confirmPhone = async () => {
+    setContactBusy(true);
+    try {
+      const d = await api('/api/me/phone/confirm', { method: 'POST', body: JSON.stringify({ newPhone: contact.newPhone, code: contact.code }) });
+      updateUser(d.user);
+      setContact({ email: '', pw: '', newPhone: '', code: '', devCode: '', phoneStep: 'idle' });
+      toast('Phone number updated.');
+    } catch (ex) { toast(ex.message, 'red'); }
+    finally { setContactBusy(false); }
   };
 
   const isWorker = user.role !== 'manager';
@@ -179,6 +277,45 @@ export default function Profile() {
       </Card>
 
       <Card className="mt16">
+        <p className="section-title" style={{ marginTop: 0 }}>Contact details</p>
+        <div className="row">
+          <div className="row-main">
+            <div className="profile-name" style={{ fontSize: 16 }}>{user.phone || '—'}</div>
+            <div className="profile-role">Phone (used to log in)</div>
+          </div>
+        </div>
+        <Field label="Change phone number">
+          <TextInput value={contact.newPhone} onChange={(e) => setContact({ ...contact, newPhone: e.target.value, phoneStep: 'idle' })} placeholder="New number with country code" />
+        </Field>
+        {contact.phoneStep === 'code' ? (
+          <>
+            {contact.devCode ? <Banner tone="info" className="mb12">Dev code for the new number: <b>{contact.devCode}</b></Banner> : null}
+            <Field label="Code sent to the new number"><TextInput value={contact.code} onChange={(e) => setContact({ ...contact, code: e.target.value })} placeholder="6-digit code" /></Field>
+          </>
+        ) : null}
+        <Field label="Current password"><TextInput type="password" value={contact.pw} onChange={(e) => setContact({ ...contact, pw: e.target.value })} autoComplete="current-password" placeholder="Confirm with your password" /></Field>
+        <div className="flex" style={{ gap: 8 }}>
+          {contact.phoneStep === 'code' ? (
+            <Button size="md" onClick={confirmPhone} disabled={contactBusy || !contact.code}><Icon name="Check" size={18} /> Confirm phone</Button>
+          ) : (
+            <Button size="md" onClick={requestPhone} disabled={contactBusy || !contact.newPhone}><Icon name="Phone" size={16} /> Verify new phone</Button>
+          )}
+        </div>
+
+        <hr style={{ border: 0, borderTop: '1px solid var(--line)', margin: '16px 0' }} />
+        <div className="flex" style={{ justifyContent: 'space-between', alignItems: 'center' }}>
+          <div>
+            <div className="profile-name" style={{ fontSize: 16 }}>{user.email || 'Not set'}</div>
+            <div className="profile-role">Email</div>
+          </div>
+          <div style={{ width: `min(280px, 60%)` }}>
+            <Field label="New email"><TextInput value={contact.email} onChange={(e) => setContact({ ...contact, email: e.target.value })} placeholder="you@example.com" /></Field>
+          </div>
+        </div>
+        <Button size="md" className="mt12" onClick={saveEmail} disabled={contactBusy || !contact.email}><Icon name="Chat" size={16} /> Save email</Button>
+      </Card>
+
+      <Card className="mt16">
         <p className="section-title" style={{ marginTop: 0 }}>Devices & sessions</p>
         <Button variant="ghost" size="md" onClick={readSessions} className="mb12"><Icon name="Phone" size={16} /> See active logins</Button>
         {sessions && (
@@ -211,6 +348,67 @@ export default function Profile() {
               <Button size="md" variant="ghost" onClick={() => setPwOpen(false)}>Cancel</Button>
             </div>
           </div>
+        )}
+      </Card>
+
+      <Card className="mt16">
+        <p className="section-title" style={{ marginTop: 0 }}>Sign-in code (PIN)</p>
+        <Banner tone="info" className="mb12">
+          <Icon name="Lock" size={16} />
+          Optional extra step when you log in. If you set one, you enter it (or your authenticator code) after your password.
+        </Banner>
+        {user.pinEnabled ? (
+          <Pill tone="green" className="mb12"><Icon name="Shield" size={13} /> PIN is on</Pill>
+        ) : null}
+        <Field label="Current password">
+          <TextInput type="password" value={pin.currentPassword} onChange={(e) => setPin({ ...pin, currentPassword: e.target.value })} autoComplete="current-password" />
+        </Field>
+        <Field label={user.pinEnabled ? 'New PIN' : 'Choose a PIN'}>
+          <TextInput value={pin.value} onChange={(e) => setPin({ ...pin, value: e.target.value })} placeholder="4–8 letters or numbers" maxLength={8} />
+        </Field>
+        <Field label="Repeat PIN">
+          <TextInput value={pin.again} onChange={(e) => setPin({ ...pin, again: e.target.value })} placeholder="Same PIN again" maxLength={8} />
+        </Field>
+        <div className="flex" style={{ gap: 8 }}>
+          <Button size="md" icon={<Icon name="Check" size={18} />} onClick={savePin} disabled={pinBusy}>
+            {pinBusy ? 'Saving…' : user.pinEnabled ? 'Change PIN' : 'Save PIN'}
+          </Button>
+          {user.pinEnabled ? (
+            <Button size="md" variant="danger" onClick={clearPin} disabled={pinBusy}><Icon name="Ban" size={16} /> Turn off PIN</Button>
+          ) : null}
+        </div>
+      </Card>
+
+      <Card className="mt16">
+        <p className="section-title" style={{ marginTop: 0 }}>Authenticator (TOTP)</p>
+        {user.totpEnabled ? (
+          <>
+            <Pill tone="green" className="mb12"><Icon name="Shield" size={13} /> Authenticator is on</Pill>
+            <Field label="Current password"><TextInput type="password" value={otpDisable.currentPassword} onChange={(e) => setOtpDisable({ ...otpDisable, currentPassword: e.target.value })} autoComplete="current-password" /></Field>
+            <Field label="Current authenticator code"><TextInput value={otpDisable.code} onChange={(e) => setOtpDisable({ ...otpDisable, code: e.target.value })} placeholder="6-digit code" /></Field>
+            <Button size="md" variant="danger" icon={<Icon name="Ban" size={16} />} onClick={disableTotp} disabled={otpBusy}>Turn off authenticator</Button>
+          </>
+        ) : otpSetup ? (
+          <>
+            <Banner tone="warn" className="mb12">
+              Add this secret to Google Authenticator (or any TOTP app), then confirm with the code it shows.
+            </Banner>
+            <p className="small muted">Secret key</p>
+            <div className="code-box">{otpSetup.secret}</div>
+            <p className="small muted">Or scan this (manual entry) — email, secret and issuer are below:</p>
+            <div className="code-box" style={{ wordBreak: 'break-all' }}>{otpSetup.otpauth}</div>
+            <Field label="Code from your authenticator app"><TextInput value={otpEnable.code} onChange={(e) => setOtpEnable({ ...otpEnable, code: e.target.value })} placeholder="6-digit code" /></Field>
+            <div className="flex" style={{ gap: 8 }}>
+              <Button size="md" icon={<Icon name="Shield" size={16} />} onClick={confirmTotp} disabled={otpBusy || !otpEnable.code}>Turn on authenticator</Button>
+              <Button size="md" variant="ghost" onClick={() => setOtpSetup(null)}>Cancel</Button>
+            </div>
+          </>
+        ) : (
+          <>
+            <p className="small muted">Use the Google Authenticator app (or any TOTP app) for an extra code on top of your password.</p>
+            <Field label="Current password"><TextInput type="password" value={otpEnable.currentPassword} onChange={(e) => setOtpEnable({ ...otpEnable, currentPassword: e.target.value })} autoComplete="current-password" /></Field>
+            <Button size="md" icon={<Icon name="Shield" size={16} />} onClick={startTotp} disabled={otpBusy}>{otpBusy ? 'Starting…' : 'Set up authenticator'}</Button>
+          </>
         )}
       </Card>
 

@@ -145,17 +145,68 @@ export function Select({ children, ...props }) {
   );
 }
 
-export function Stepper({ label, value, min = 0, max = 1000, step = 10, unit, onChange, disabled }) {
+export function Stepper({ label, value, min = 0, max = 100000, step = 10, unit, onChange, disabled }) {
   const clamp = (v) => Math.min(max, Math.max(min, v));
+
+  const handleInputChange = (e) => {
+    const raw = e.target.value.replace(/[^0-9]/g, '');
+    if (raw === '') {
+      onChange('');
+      return;
+    }
+    const num = Number(raw);
+    onChange(num);
+  };
+
+  const handleBlur = () => {
+    const num = Number(value);
+    if (isNaN(num) || num < min) {
+      onChange(min);
+    } else if (num > max) {
+      onChange(max);
+    }
+  };
+
+  const numVal = Number(value) || 0;
+
   return (
     <div className="stepper-row">
-      <button type="button" className="stepper-btn" disabled={disabled || value <= min} onClick={() => onChange(clamp(value - step))}>−</button>
+      <button
+        type="button"
+        className="stepper-btn"
+        disabled={disabled || numVal <= min}
+        onClick={() => onChange(clamp(numVal - step))}
+        aria-label="Decrease amount"
+      >
+        −
+      </button>
       <div className="stepper-val">
-        <span className="stepper-big">{fmtMoney(value)}</span>
-        {unit ? <span className="stepper-unit">{unit}</span> : null}
+        <div className="stepper-input-wrap">
+          <span className="stepper-currency">₹</span>
+          <input
+            type="text"
+            inputMode="numeric"
+            pattern="[0-9]*"
+            className="stepper-input"
+            value={value === '' ? '' : value}
+            onChange={handleInputChange}
+            onBlur={handleBlur}
+            disabled={disabled}
+            placeholder={String(min)}
+          />
+          {unit ? <span className="stepper-unit">{unit}</span> : null}
+        </div>
         {label ? <span className="stepper-label">{label}</span> : null}
       </div>
-      <button type="button" className="stepper-btn" disabled={disabled || value >= max} onClick={() => onChange(clamp(value + step))}>+</button>
+      <button
+        type="button"
+        className="stepper-btn"
+        disabled={disabled || numVal >= max}
+        onClick={() => onChange(clamp(numVal + step))}
+        aria-label="Increase amount"
+      >
+        +
+      </button>
     </div>
   );
 }
@@ -329,6 +380,11 @@ export function usePushRegister() {
   const { user } = useAuthSafe();
   useEffect(() => {
     if (!user) return;
+    let access = null;
+    try {
+      access = (JSON.parse(localStorage.getItem('odc.tokens') || '{}') || {}).accessToken;
+    } catch {}
+    if (!access) return;
     if (!('serviceWorker' in navigator)) return;
     navigator.serviceWorker.register('/sw.js').then(() => {}).catch(() => {});
     if (!('PushManager' in window)) return;
@@ -352,7 +408,7 @@ export function usePushRegister() {
       if (sub) {
         await fetch('/api/me/push-subscribe', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${(JSON.parse(localStorage.getItem('odc.tokens') || '{}') || {}).accessToken}` },
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${access}` },
           body: JSON.stringify({ subscription: { endpoint: sub.endpoint, keys: sub.toJSON().keys }, name: 'web' }),
         }).catch(() => {});
       }

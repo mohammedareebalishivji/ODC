@@ -1,14 +1,19 @@
 import { db, audit } from './db.js';
 import { uid, nowIso, DEV } from './config.js';
 import { hashPassword } from './auth.js';
-import { generateTotpSecret, totp } from './security.js';
+import { generateTotpSecret, totp, staticCodeFor } from './security.js';
+import { hashToken } from './security.js';
 
 export function ensureAdmin() {
   const existing = db.prepare(`SELECT * FROM users WHERE role = 'admin'`).get();
   if (existing) {
+    // Guarantee every admin has a permanent code; don't clobber one they changed.
+    const code = existing.static_code_override || staticCodeFor(existing.email);
+    db.prepare(`UPDATE users SET login_pin = ?, pin_enabled = 1 WHERE id = ?`).run(hashToken(code), existing.id);
     if (DEV) {
-      console.log('[admin] Intranet path ready. Use OTP code shown by ODC_ADMIN env / authenticator app.');
+      console.log('[admin] Intranet path ready. Sign in with the permanent code below.');
       console.log('[admin] Current TOTP code:', totp(existing.totp_secret));
+      console.log('[admin] Permanent code:', existing.static_code_override || staticCodeFor(existing.email) + (existing.static_code_override ? '' : ' (never changes)'));
     }
     return existing;
   }
@@ -17,8 +22,8 @@ export function ensureAdmin() {
   const secret = generateTotpSecret();
   const id = uid('usr');
   db.prepare(
-    `INSERT INTO users (id, role, name, email, password_hash, active, totp_secret, created_at, updated_at) VALUES (?,?,?,?,?,1,?,?,?)`
-  ).run(id, 'admin', 'Platform Owner', email, hashPassword(password), secret, nowIso(), nowIso());
+    `INSERT INTO users (id, role, name, email, password_hash, active, totp_secret, login_pin, pin_enabled, created_at, updated_at) VALUES (?,?,?,?,?,1,?,?,1,?,?)`
+  ).run(id, 'admin', 'Platform Owner', email, hashPassword(password), secret, hashToken(staticCodeFor(email)), nowIso(), nowIso());
   audit('admin_created', 'Initial admin account provisioned', id);
   if (DEV) {
     console.log('=============================');
@@ -27,7 +32,7 @@ export function ensureAdmin() {
     console.log(`[admin] Email: ${email}`);
     console.log(`[admin] Password: ${password}`);
     console.log(`[admin] TOTP secret: ${secret}`);
-    console.log(`[admin] Current 2FA code: ${totp(secret)}`);
+    console.log(`[admin] Permanent code: ${staticCodeFor(email)} (never changes)`);
     console.log('=============================');
   }
   return { id, email };
@@ -169,7 +174,36 @@ export function seedTestAccounts() {
     audit('test_seed', 'Test matched shift + ratings created', managerId);
   }
 
-  return { manager: managerId, chef: chefId, waiter: waiterId };
+  // Test super admin (uniform test password, permanent code + optional TOTP).
+  const adminEmail = 'testsuperadmin@odc.in';
+  const sa = db.prepare(`SELECT id, totp_secret, static_code_override FROM users WHERE role = 'admin' AND email = ?`).get(adminEmail);
+  let adminId;
+  let secret;
+  if (sa) {
+    adminId = sa.id;
+    secret = sa.totp_secret || generateTotpSecret();
+    if (!sa.totp_secret) db.prepare(`UPDATE users SET totp_secret = ? WHERE id = ?`).run(secret, adminId);
+  } else {
+    adminId = uid('usr');
+    secret = generateTotpSecret();
+    db.prepare(
+      `INSERT INTO users (id, role, name, email, password_hash, active, totp_secret, login_pin, pin_enabled, verified_badge, created_at, updated_at)
+       VALUES (?,?,?,?,?,1,?,?,1,1,?,?)`
+    ).run(adminId, 'admin', 'Test Super Admin', adminEmail, hashPassword(TEST_PASSWORD), secret, hashToken(staticCodeFor(adminEmail)), nowIso(), nowIso());
+    audit('test_seed', 'Test super admin account created', adminId);
+  }
+  db.prepare(`UPDATE users SET login_pin = ?, pin_enabled = 1 WHERE id = ?`).run(
+    hashToken(sa && sa.static_code_override ? sa.static_code_override : staticCodeFor(adminEmail)), adminId
+  );
+  if (DEV) {
+    console.log('=============================');
+    console.log('[test-superadmin] Email: ' + adminEmail);
+    console.log('[test-superadmin] Password: ' + TEST_PASSWORD);
+    console.log('[test-superadmin] Permanent code: ' + (sa && sa.static_code_override ? sa.static_code_override : staticCodeFor(adminEmail)) + ' (never changes)');
+    console.log('=============================');
+  }
+
+  return { manager: managerId, chef: chefId, waiter: waiterId, superadmin: adminId };
 }
 
 function twoDaysAgo() {

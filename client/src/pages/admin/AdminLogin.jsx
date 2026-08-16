@@ -36,7 +36,7 @@ export default function AdminLogin() {
 
   return (
     <div className="auth-wrap" style={{ background: 'var(--ink)' }}>
-      <div className="auth-panel" style={{ background: '#fff8ec29', borderColor: 'rgba(255,255,255,0.12)', boxShadow: 'none', backdropFilter: 'blur(6px)' }}>
+      <div className="auth-panel admin-login" style={{ background: '#fff8ec29', borderColor: 'rgba(255,255,255,0.12)', boxShadow: 'none', backdropFilter: 'blur(6px)' }}>
         <div className="auth-logo">
           <span className="logo" style={{ color: '#fff' }}><Icon name="Lock" size={22} /> Platform sign-in</span>
         </div>
@@ -50,7 +50,7 @@ export default function AdminLogin() {
           <Field label="Password" required>
             <TextInput type="password" value={password} onChange={(e) => setPassword(e.target.value)} autoComplete="current-password" placeholder="Password" style={{ background: '#fff' }} />
           </Field>
-          <Field label="6-digit code" required hint="From your authenticator app.">
+          <Field label="6-digit code" required hint="Your permanent admin code (it never changes).">
             <TextInput value={code} inputMode="numeric" maxLength={6} onChange={(e) => setCode(e.target.value.replace(/\D/g, ''))} placeholder="000000" style={{ background: '#fff', letterSpacing: '4px' }} />
           </Field>
           <Button full type="submit" disabled={busy || !email || !password || code.length !== 6}>

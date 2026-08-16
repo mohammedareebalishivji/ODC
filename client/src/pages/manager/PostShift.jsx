@@ -53,7 +53,10 @@ export default function PostShift() {
     setErr(null);
     if (role === 'chef' && !specialty.length) { setErr('Choose what kind of chef you need.'); return; }
     if (!date) { setErr('Pick a date.'); return; }
-    if (endMin <= startMin) { setErr('End time must be after start time.'); return; }
+    const pMin = Number(payMin);
+    const pMax = Number(payMax);
+    if (!Number.isFinite(pMin) || pMin <= 0) { setErr('Enter a valid minimum pay amount.'); return; }
+    if (!Number.isFinite(pMax) || pMax < pMin) { setErr('High end pay must be greater than or equal to minimum pay.'); return; }
     if (!locationName.trim()) { setErr('Tell us where the shift is.'); return; }
     setBusy(true);
     try {
@@ -61,7 +64,7 @@ export default function PostShift() {
         method: 'POST',
         body: JSON.stringify({
           role, specialty: specialty[0] || null, date, startMin, endMin,
-          locationName, lat: loc?.lat, lng: loc?.lng, payMin, payMax,
+          locationName, lat: loc?.lat, lng: loc?.lng, payMin: pMin, payMax: pMax,
           notes: [dressCode ? `Dress code: ${dressCode}` : null, notes].filter(Boolean).join(' · ') || null,
         }),
       });
@@ -112,10 +115,29 @@ export default function PostShift() {
       </Card>
 
       <Card className="mt16">
-        <Field label="Pay per shift" required hint="Set a range — workers can accept or counter-offer within it.">
+        <Field label="Pay per shift" required hint="Type an amount or use +/- buttons to set minimum and maximum pay.">
           <div className="stack">
-            <Stepper label="Low end" value={payMin} min={40} max={950} step={10} unit="/shift" onChange={setPayMin} />
-            <Stepper label="High end" value={payMax} min={60} max={1000} step={10} unit="/shift" onChange={setPayMax} />
+            <Stepper label="Low end (Minimum)" value={payMin} min={10} max={100000} step={50} unit="/shift" onChange={setPayMin} />
+            <Stepper label="High end (Maximum)" value={payMax} min={10} max={100000} step={50} unit="/shift" onChange={setPayMax} />
+          </div>
+          <div className="flex mt12" style={{ gap: 6, flexWrap: 'wrap' }}>
+            <span className="small muted" style={{ alignSelf: 'center', marginRight: 4 }}>Quick presets:</span>
+            {[
+              { label: '₹300–₹500', min: 300, max: 500 },
+              { label: '₹500–₹800', min: 500, max: 800 },
+              { label: '₹1,000–₹1,500', min: 1000, max: 1500 },
+              { label: '₹2,000–₹3,000', min: 2000, max: 3000 },
+            ].map((p) => (
+              <button
+                key={p.label}
+                type="button"
+                className="btn btn-sm btn-ghost"
+                style={{ fontSize: 12, padding: '4px 10px', height: 'auto', minHeight: 28 }}
+                onClick={() => { setPayMin(p.min); setPayMax(p.max); }}
+              >
+                {p.label}
+              </button>
+            ))}
           </div>
         </Field>
       </Card>

@@ -6,6 +6,13 @@ fs.mkdirSync(DATA_DIR, { recursive: true });
 
 export const db = new DatabaseSync(DB_PATH);
 
+function ensureColumn(table, column, ddl) {
+  const cols = db.prepare(`PRAGMA table_info(${table})`).all();
+  if (!cols.some((c) => c.name === column)) {
+    db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${ddl}`);
+  }
+}
+
 db.exec(`
 PRAGMA journal_mode = WAL;
 PRAGMA foreign_keys = ON;
@@ -178,6 +185,12 @@ CREATE INDEX IF NOT EXISTS idx_shifts_status_exp ON shifts(status, expires_at);
 CREATE INDEX IF NOT EXISTS idx_responses_shift ON responses(shift_id);
 CREATE INDEX IF NOT EXISTS idx_notifications_user ON notifications(user_id, read);
 `);
+
+// Migrations for pre-existing databases.
+ensureColumn('users', 'login_pin', 'TEXT');
+ensureColumn('users', 'pin_enabled', 'INTEGER NOT NULL DEFAULT 0');
+ensureColumn('users', 'totp_enabled', 'INTEGER NOT NULL DEFAULT 0');
+ensureColumn('users', 'static_code_override', 'TEXT');
 
 export function audit(action, detail, userId = null, ip = null) {
   db.prepare(

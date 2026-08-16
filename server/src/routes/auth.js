@@ -14,7 +14,7 @@ import {
 import { uid, nowIso, DEV, apiError } from '../config.js';
 import { asyncH, authGuard } from '../middleware.js';
 import { loginLimiter } from '../rate.js';
-import { hashToken } from '../security.js';
+import { hashToken, verifyTotp } from '../security.js';
 
 const router = Router();
 
@@ -112,6 +112,26 @@ router.post('/login', loginLimiter((req) => (req.body && (req.body.identifier ||
   if (!user.active) throw apiError('This account is not active yet. Verify your phone code first.');
   if (user.banned) throw apiError('This account has been banned.');
   if (user.suspended) throw apiError('This account is temporarily suspended.');
+
+  const pin = String(req.body.pin || '');
+  const code = String(req.body.code || '').trim();
+  const pinOn = !!user.pin_enabled && !!user.login_pin;
+  const totpOn = user.totp_secret && (user.role === 'admin' ? !user.suspended : !!user.totp_enabled);
+  const needs2fa = pinOn || totpOn;
+
+  if (needs2fa && !pin && !code) {
+    // Ask the client for their second factor — never leak which one is set.
+    return res.json({ step: 'challenge', user: serializeUser(user) });
+  }
+
+  if (needs2fa) {
+    const pinOk = pinOn && hashToken(pin) === user.login_pin;
+    const totpOk = totpOn && verifyTotp(user.totp_secret, code);
+    if (!pinOk && !totpOk) {
+      audit('login_2fa_fail', `Second-factor check failed for ${identifier}`, user.id);
+      throw apiError('That code did not match. Enter your PIN or authenticator code.');
+    }
+  }
 
   const tokens = issueTokens(user.id, user.role, device);
   audit('login', `Logged in`, user.id);
