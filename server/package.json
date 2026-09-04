@@ -9,12 +9,14 @@
   "scripts": {
     "start": "node src/index.js",
     "dev": "node --watch src/index.js",
-    "seed-demo": "node src/seed.js"
+    "seed-demo": "node src/seed.js",
+    "test": "node --test --test-concurrency=1 test/*.test.js"
   },
   "dependencies": {
     "bcryptjs": "^3.0.2",
     "cors": "^2.8.5",
     "express": "^4.21.2",
+    "pg": "^8.13.0",
     "web-push": "^3.6.7"
   }
 }

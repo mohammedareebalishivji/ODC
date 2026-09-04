@@ -12,6 +12,11 @@ function prune() {
 
 setInterval(prune, 60_000).unref();
 
+// Test hook: clears all in-memory buckets.
+export function resetRateLimiter() {
+  buckets.clear();
+}
+
 export function rateLimit({ key = (req) => req.ip, windowMs = 60_000, max = 60, lockoutMs = 0 }) {
   return (req, res, next) => {
     prune();

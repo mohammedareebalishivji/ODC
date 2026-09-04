@@ -3,8 +3,10 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../state';
 import { api } from '../api';
 import ShiftCard from '../components/ShiftCard';
-import { Icon, ChefIcon, WaiterIcon } from '../icons';
-import { Card, fmtMoney, timeLeft, useNow } from '../ui';
+import { Icon } from '../icons';
+import { Card } from '../components/ui';
+import { fmtMoney, timeLeft, useNow } from '../ui';
+import { Plus, Clock, Wallet, Compass } from 'lucide-react';
 
 export default function Home() {
   const { user } = useAuth();
@@ -37,27 +39,32 @@ export default function Home() {
   if (isManager) {
     return (
       <>
-        <div className="hero mt8">
-          <p className="hero-eyebrow">Manager view</p>
-          <h1>Hi {user.name.split(' ')[0]}</h1>
-          <p className="hero-sub">
+        <div className="py-1.5 px-0.5 mt-2">
+          <p className="text-accent-dark font-extrabold text-[13px] uppercase tracking-widest">Manager view</p>
+          <h1 className="text-[30px] font-black tracking-tight mt-1.5">Hi {user.name.split(' ')[0]}</h1>
+          <p className="text-muted-foreground mt-2 text-[15px]">
             {openShifts.length
               ? `You have ${openShifts.length} open shift${openShifts.length > 1 ? 's' : ''}. ${openShifts.reduce((a, s) => a + (s.respCount ?? 0), 0)} response${openShifts.reduce((a, s) => a + (s.respCount ?? 0), 0) === 1 ? '' : 's'} waiting on them.`
               : matchedShifts.length ? 'Your next shift is locked in. Nice work.' : 'A shift is open for 12 hours, then it closes if nobody accepts.'}
           </p>
         </div>
 
-        <div className="mt16">
-          <button className="cta-card cta-accent" style={{ width: '100%', textAlign: 'left', border: 0 }} onClick={() => nav('/app/post')}>
-            <span className="cta-icon"><Icon name="Plus" size={30} /></span>
+        <div className="mt-4">
+          <button
+            className="w-full rounded-[22px] p-5.5 text-white flex items-center gap-4 shadow-[0_10px_26px_rgba(74,138,111,0.28)] cursor-pointer bg-gradient-to-br from-[#5da582] to-[#3f7a63] border-0 text-left"
+            onClick={() => nav('/app/post')}
+          >
+            <span className="flex items-center justify-center w-[58px] h-[58px] rounded-[16px] bg-white/18 shrink-0">
+              <Plus size={30} />
+            </span>
             <span>
-              <span className="cta-title">Post a Shift</span>
-              <span className="cta-sub">Find a chef or waiter for your next rush</span>
+              <span className="text-lg font-extrabold block">Post a Shift</span>
+              <span className="text-[13.5px] opacity-85 mt-0.5 block">Find a chef or waiter for your next rush</span>
             </span>
           </button>
         </div>
 
-        <div className="stat-grid mt16">
+        <div className="grid grid-cols-2 gap-2.5 mt-4">
           <StatCard num={openShifts.length} label="Open shifts" tone="accent" />
           <StatCard num={matchedShifts.length} label="Locked in" tone="green" />
         </div>
@@ -66,12 +73,21 @@ export default function Home() {
           title="Your shifts"
           items={mine.shifts.slice(0, 5)}
           empty={
-            <div className="text-center muted mt12">
-              No shifts yet. <button className="small" style={{ color: 'var(--accent-dark)', fontWeight: 700 }} onClick={() => nav('/app/post')}>Post your first one.</button>
+            <div className="text-center text-muted-foreground mt-3">
+              No shifts yet.{' '}
+              <button className="text-xs font-bold text-accent-dark" onClick={() => nav('/app/post')}>
+                Post your first one.
+              </button>
             </div>
           }
         />
-        {mine.shifts.length > 5 ? <p className="text-center small muted mt12"><button onClick={() => nav('/app/manage')} style={{ fontWeight: 700, color: 'var(--accent-dark)' }}>See all shifts</button></p> : null}
+        {mine.shifts.length > 5 && (
+          <p className="text-center text-xs text-muted-foreground mt-3">
+            <button onClick={() => nav('/app/manage')} className="font-bold text-accent-dark">
+              See all shifts
+            </button>
+          </p>
+        )}
       </>
     );
   }
@@ -80,50 +96,53 @@ export default function Home() {
   const earned = mine.shifts.filter((s) => s.status === 'matched' && s.agreedPay).reduce((a, s) => a + s.agreedPay, 0);
   return (
     <>
-      <div className="hero mt8">
-        <p className="hero-eyebrow">{user.role === 'chef' ? 'Chef view' : 'Waiter view'}</p>
-        <h1>Hi {user.name.split(' ')[0]}</h1>
-        <p className="hero-sub">
+      <div className="py-1.5 px-0.5 mt-2">
+        <p className="text-accent-dark font-extrabold text-[13px] uppercase tracking-widest">
+          {user.role === 'chef' ? 'Chef view' : 'Waiter view'}
+        </p>
+        <h1 className="text-[30px] font-black tracking-tight mt-1.5">Hi {user.name.split(' ')[0]}</h1>
+        <p className="text-muted-foreground mt-2 text-[15px]">
           {user.available
             ? 'You are Free now. We are watching for nearby shifts that fit you.'
             : 'You are marked not available — flip the switch to start getting shift alerts.'}
         </p>
       </div>
 
-      <div className="mt16">
-        <button className="cta-card cta-dark" style={{ width: '100%', textAlign: 'left', border: 0 }} onClick={() => nav('/app/browse')}>
-          <span className="cta-icon"><Icon name="Plasma" size={30} /></span>
+      <div className="mt-4">
+        <button
+          className="w-full rounded-[22px] p-5.5 text-white flex items-center gap-4 shadow-[0_10px_26px_rgba(74,138,111,0.28)] cursor-pointer bg-gradient-to-br from-[#3a4240] to-[#232a27] border-0 text-left"
+          onClick={() => nav('/app/browse')}
+        >
+          <span className="flex items-center justify-center w-[58px] h-[58px] rounded-[16px] bg-white/18 shrink-0">
+            <Compass size={30} />
+          </span>
           <span>
-            <span className="cta-title">Find work near you</span>
-            <span className="cta-sub">See open shifts you can respond to right now</span>
+            <span className="text-lg font-extrabold block">Find work near you</span>
+            <span className="text-[13.5px] opacity-85 mt-0.5 block">See open shifts you can respond to right now</span>
           </span>
         </button>
       </div>
 
-      <div className="stat-grid mt16">
+      <div className="grid grid-cols-2 gap-2.5 mt-4">
         <StatCard num={matchedShifts.length} label="Confirmed shifts" tone="green" />
         <StatCard num={'₹' + Intl.NumberFormat('en-IN').format(earned)} label="Earned so far" tone="accent" />
       </div>
 
-      {pendingOffers.length ? (
+      {pendingOffers.length > 0 && (
         <>
-          <p className="section-title">Waiting on the manager</p>
-          <div className="stack">
+          <p className="text-base font-extrabold mt-5.5 mx-0.5 mb-3 flex items-center gap-2 text-ink-soft">Waiting on the manager</p>
+          <div className="flex flex-col gap-3">
             {pendingOffers.slice(0, 3).map((s) => (
               <ShiftCard key={s.id} shift={s} right={
-                <PillLabel tone="amber"><Icon name="Clock" size={13} /> pending · {timeLeft(s.remainingMs)} left</PillLabel>
+                <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold whitespace-nowrap bg-amber-soft text-amber">
+                  <Clock size={13} /> pending · {timeLeft(s.remainingMs)} left
+                </span>
               } />
             ))}
           </div>
         </>
-      ) : null}
+      )}
     </>
-  );
-}
-
-function PillLabel({ tone, children }) {
-  return (
-    <span className={`pill pill-${tone}`}>{children}</span>
   );
 }
 
@@ -131,11 +150,11 @@ function ShiftList({ title, items, empty }) {
   const nav = useNavigate();
   return (
     <>
-      <p className="section-title">{title}</p>
+      <p className="text-base font-extrabold mt-5.5 mx-0.5 mb-3 flex items-center gap-2 text-ink-soft">{title}</p>
       {items.length === 0 ? (
         <Card>{empty}</Card>
       ) : (
-        <div className="stack">
+        <div className="flex flex-col gap-3">
           {items.map((s) => <ShiftCard key={s.id} shift={s} onOpen={() => nav(`/app/shifts/${s.id}`)} />)}
         </div>
       )}
@@ -145,18 +164,20 @@ function ShiftList({ title, items, empty }) {
 
 function StatCard({ num, label, tone }) {
   return (
-    <div className="stat-card">
-      <div className="stat-num" style={{ color: tone === 'green' ? 'var(--green)' : tone === 'accent' ? 'var(--accent-dark)' : 'inherit' }}>{num}</div>
-      <div className="stat-lbl">{label}</div>
+    <div className="bg-card border border-border rounded-2xl p-3.5">
+      <div className={`text-[26px] font-black tracking-tight ${tone === 'green' ? 'text-green' : tone === 'accent' ? 'text-accent-dark' : ''}`}>
+        {num}
+      </div>
+      <div className="text-xs text-muted-foreground font-bold mt-0.5">{label}</div>
     </div>
   );
 }
 
 function LoadingRows() {
   return (
-    <div className="mt16 stack">
-      <div className="skeleton" style={{ height: 120 }} />
-      <div className="skeleton" style={{ height: 120 }} />
+    <div className="mt-4 flex flex-col gap-3">
+      <div className="skeleton h-[120px]" />
+      <div className="skeleton h-[120px]" />
     </div>
   );
 }

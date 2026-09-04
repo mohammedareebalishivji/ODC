@@ -10,30 +10,33 @@ export function authGuard(roles = null) {
       res.status(401).json({ error: 'Please log in again.' });
       return;
     }
-    const user = db.prepare(`SELECT * FROM users WHERE id = ?`).get(payload.sub);
-    if (!user) {
-      res.status(401).json({ error: 'Account not found.' });
-      return;
-    }
-    if (user.role === 'admin' && !payload.admin) {
-      res.status(401).json({ error: 'Please log in again.' });
-      return;
-    }
-    if (roles && !roles.includes(user.role)) {
-      res.status(403).json({ error: 'You do not have permission to do that.' });
-      return;
-    }
-    if (user.banned) {
-      res.status(403).json({ error: 'This account has been banned.' });
-      return;
-    }
-    if (user.suspended && roles && roles.includes('admin')) {
-      res.status(403).json({ error: 'Account suspended.' });
-      return;
-    }
-    req.user = user;
-    req.tokenPayload = payload;
-    next();
+    db.get(`SELECT * FROM users WHERE id = $1`, payload.sub)
+      .then((user) => {
+        if (!user) {
+          res.status(401).json({ error: 'Account not found.' });
+          return;
+        }
+        if (user.role === 'admin' && !payload.admin) {
+          res.status(401).json({ error: 'Please log in again.' });
+          return;
+        }
+        if (roles && !roles.includes(user.role)) {
+          res.status(403).json({ error: 'You do not have permission to do that.' });
+          return;
+        }
+        if (user.banned) {
+          res.status(403).json({ error: 'This account has been banned.' });
+          return;
+        }
+        if (user.suspended && roles && roles.includes('admin')) {
+          res.status(403).json({ error: 'Account suspended.' });
+          return;
+        }
+        req.user = user;
+        req.tokenPayload = payload;
+        next();
+      })
+      .catch(next);
   };
 }
 

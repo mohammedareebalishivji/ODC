@@ -2,11 +2,72 @@ import React, { useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../state';
 import { api } from '../api';
-import {
-  Card, Button, Banner, Field, TextInput, Select, TextArea, TagPicker, Avatar,
-  RoleBadge, Pill, Icon, toast, Seg,
-} from '../ui';
-import { SpecialtyList } from '../icons';
+import { Card, Button, Input, Select, Badge } from '../components/ui';
+import { Icon, ChefIcon, WaiterIcon, ManagerIcon, SpecialtyList } from '../icons';
+import { toast } from '../ui';
+import { Shield, Lock, Phone, Camera, ArrowLeft, Ban, Check, LogOut } from 'lucide-react';
+
+function RoleBadge({ role, size = 18 }) {
+  const IconComp = role === 'chef' ? ChefIcon : role === 'waiter' ? WaiterIcon : ManagerIcon;
+  const label = role === 'chef' ? 'Chef' : role === 'waiter' ? 'Waiter' : 'Manager';
+  return (
+    <span className="inline-flex items-center gap-1.5 font-extrabold text-base text-ink-soft">
+      <IconComp size={size} />
+      <span>{label}</span>
+    </span>
+  );
+}
+
+function Pill({ tone = 'neutral', children, className = '' }) {
+  const toneMap = {
+    green: 'bg-green-soft text-green',
+    amber: 'bg-amber-soft text-amber',
+    red: 'bg-red-soft text-red',
+    blue: 'bg-blue-soft text-blue',
+    neutral: 'bg-paper-2 text-ink-soft',
+    accent: 'bg-secondary text-accent-dark',
+  };
+  return (
+    <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold whitespace-nowrap ${toneMap[tone] || toneMap.neutral} ${className}`}>
+      {children}
+    </span>
+  );
+}
+
+function Field({ label, hint, error, children, required }) {
+  return (
+    <label className="block mb-4">
+      <span className="block font-bold text-sm mb-1.5 text-ink-soft">
+        {label}
+        {required && <span className="text-primary">*</span>}
+      </span>
+      {children}
+      {hint && <span className="block mt-1.5 text-xs text-muted-foreground leading-relaxed">{hint}</span>}
+      {error && <span className="block mt-1.5 text-[13px] text-red font-semibold">{error}</span>}
+    </label>
+  );
+}
+
+function StepperLite({ value, onChange }) {
+  return (
+    <div className="flex items-center justify-between gap-3 bg-card border-[1.5px] border-border rounded-2xl p-2 mt-1">
+      <button type="button" className="w-12 h-12 rounded-xl bg-paper-2 text-2xl font-bold text-ink-soft shrink-0 flex items-center justify-center hover:bg-line" onClick={() => onChange(Math.max(0, value - 1))}>−</button>
+      <div className="text-center flex-1 min-w-0">
+        <span className="text-[28px] font-extrabold tracking-tight">{value}</span>
+        <span className="text-[15px] text-muted-foreground font-semibold ml-1">years</span>
+      </div>
+      <button type="button" className="w-12 h-12 rounded-xl bg-paper-2 text-2xl font-bold text-ink-soft shrink-0 flex items-center justify-center hover:bg-line" onClick={() => onChange(Math.min(45, value + 1))}>+</button>
+    </div>
+  );
+}
+
+function timeAgoLocal(iso) {
+  const m = Math.floor((Date.now() - new Date(iso).getTime()) / 60000);
+  if (m < 60) return `${m}m ago`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `${h}h ago`;
+  return `${Math.floor(h / 24)}d ago`;
+}
 
 export default function Profile() {
   const { user, updateUser, logout } = useAuth();
@@ -198,43 +259,59 @@ export default function Profile() {
 
   return (
     <>
-      <div className="hero">
-        <p className="hero-eyebrow">Profile</p>
-        <h1>{user.name}</h1>
-        <p className="hero-sub flex" style={{ gap: 8 }}>
+      <div className="py-1.5 px-0.5">
+        <p className="text-accent-dark font-extrabold text-[13px] uppercase tracking-widest">Profile</p>
+        <h1 className="text-[30px] font-black tracking-tight mt-1.5">{user.name}</h1>
+        <p className="text-muted-foreground mt-2 text-[15px] flex items-center gap-2">
           <RoleBadge role={user.role} />
-          {(user.verifiedBadge ? <><Pill tone="green"><Icon name="Shield" size={13} /> Verified</Pill></> : <Pill tone="amber"><Icon name="Clock" size={13} /> Verification under review</Pill>)}
+          {user.verifiedBadge ? (
+            <Pill tone="green"><Shield size={13} /> Verified</Pill>
+          ) : (
+            <Pill tone="amber"><Shield size={13} /> Verification under review</Pill>
+          )}
         </p>
       </div>
 
-      <Card className="mt16">
-        <div className="profile-head">
-          <button onClick={() => fileRef.current?.click()} style={{ position: 'relative' }}>
-            <Avatar photo={user.photo} name={user.name} size={72} role={user.role} />
-            <span className="badge-camera"><Icon name="Camera" size={16} /></span>
+      {/* Photo + info card */}
+      <Card className="mt-4">
+        <div className="flex items-center gap-4">
+          <button onClick={() => fileRef.current?.click()} className="relative">
+            <div className="w-[72px] h-[72px] rounded-full bg-paper-2 flex items-center justify-center overflow-hidden">
+              {user.photo ? (
+                <img src={user.photo} alt={user.name} className="w-full h-full object-cover" />
+              ) : (
+                <span className="text-2xl font-extrabold text-ink-soft">
+                  {(user.name || '?').split(' ').map((w) => w[0]).slice(0, 2).join('').toUpperCase()}
+                </span>
+              )}
+            </div>
+            <span className="absolute right-[-2px] bottom-[-2px] w-[26px] h-[26px] rounded-full bg-primary text-white flex items-center justify-center shadow-lg">
+              <Camera size={16} />
+            </span>
           </button>
           <input ref={fileRef} type="file" accept="image/*" hidden onChange={uploadPhoto} />
           <div>
-            <div className="profile-name">{user.name}</div>
-            <div className="profile-role">{user.phone || ''}</div>
-            {user.email ? <div className="profile-role">{user.email}</div> : null}
+            <div className="text-[21px] font-black">{user.name}</div>
+            <div className="text-muted-foreground">{user.phone || ''}</div>
+            {user.email && <div className="text-muted-foreground">{user.email}</div>}
           </div>
         </div>
-        {!user.verifiedBadge && isWorker ? (
-          <Banner tone="info" className="mt12">
-            <Icon name="Shield" size={16} />
-            Your ID documents are under review. Managers see you as unverified until they are approved.
-          </Banner>
-        ) : null}
+        {!user.verifiedBadge && isWorker && (
+          <div className="flex items-start gap-2.5 rounded-[14px] p-3 px-3.5 text-[14.5px] bg-blue-soft text-blue mt-3">
+            <Shield size={16} className="mt-0.5 shrink-0" />
+            <span className="flex-1">Your ID documents are under review. Managers see you as unverified until they are approved.</span>
+          </div>
+        )}
       </Card>
 
-      <Card className="mt16">
-        <p className="section-title" style={{ marginTop: 0 }}>Your details</p>
-        <Field label="Full name"><TextInput value={form.name} onChange={(e) => set('name', e.target.value)} /></Field>
+      {/* Details card */}
+      <Card className="mt-4">
+        <p className="text-base font-extrabold mb-3 flex items-center gap-2 text-ink-soft">Your details</p>
+        <Field label="Full name"><Input value={form.name} onChange={(e) => set('name', e.target.value)} /></Field>
 
-        {user.role === 'manager' ? (
+        {user.role === 'manager' && (
           <>
-            <Field label="Business name"><TextInput value={form.businessName} onChange={(e) => set('businessName', e.target.value)} /></Field>
+            <Field label="Business name"><Input value={form.businessName} onChange={(e) => set('businessName', e.target.value)} /></Field>
             <Field label="Business type">
               <Select value={form.businessType} onChange={(e) => set('businessType', e.target.value)}>
                 <option value="restaurant">Restaurant</option>
@@ -244,12 +321,12 @@ export default function Profile() {
                 <option value="other">Other venue</option>
               </Select>
             </Field>
-            <Field label="Business address"><TextInput value={form.businessAddress} onChange={(e) => set('businessAddress', e.target.value)} /></Field>
-            <Field label="License (optional)"><TextInput value={form.licenseFile} onChange={(e) => set('licenseFile', e.target.value)} placeholder="File name or link" /></Field>
+            <Field label="Business address"><Input value={form.businessAddress} onChange={(e) => set('businessAddress', e.target.value)} /></Field>
+            <Field label="License (optional)"><Input value={form.licenseFile} onChange={(e) => set('licenseFile', e.target.value)} placeholder="File name or link" /></Field>
           </>
-        ) : null}
+        )}
 
-        {user.role === 'chef' ? (
+        {user.role === 'chef' && (
           <>
             <Field label="Specialties">
               <TagPicker options={SpecialtyList} value={form.specialties} onChange={(v) => set('specialties', v)} max={8} />
@@ -257,173 +334,183 @@ export default function Profile() {
             <Field label="Years of experience">
               <StepperLite value={form.yearsExperience} onChange={(v) => set('yearsExperience', v)} />
             </Field>
-            <Field label="Food safety certificate (optional)"><TextInput value={form.certFile} onChange={(e) => set('certFile', e.target.value)} placeholder="File name or link" /></Field>
+            <Field label="Food safety certificate (optional)"><Input value={form.certFile} onChange={(e) => set('certFile', e.target.value)} placeholder="File name or link" /></Field>
           </>
-        ) : null}
+        )}
 
-        {user.role === 'waiter' ? (
+        {user.role === 'waiter' && (
           <>
             <Field label="Experience">
               <Select value={form.experienceLevel} onChange={(e) => set('experienceLevel', e.target.value)}>
                 {['Just starting', '1–3 years', '4–7 years', '8+ years'].map((x) => <option key={x} value={x}>{x}</option>)}
               </Select>
             </Field>
-            <Field label="Languages"><TagPicker options={['English','Hindi','Tamil','Telugu','Kannada','Malayalam','Gujarati','Bengali','Punjabi','Marathi'].map((l) => ({ name: l }))} value={form.languages} onChange={(v) => set('languages', v)} max={6} /></Field>
-            <Field label="ID proof (optional)"><TextInput value={form.idFile} onChange={(e) => set('idFile', e.target.value)} placeholder="File name or link" /></Field>
+            <Field label="Languages">
+              <TagPicker options={['English','Hindi','Tamil','Telugu','Kannada','Malayalam','Gujarati','Bengali','Punjabi','Marathi'].map((l) => ({ name: l }))} value={form.languages} onChange={(v) => set('languages', v)} max={6} />
+            </Field>
+            <Field label="ID proof (optional)"><Input value={form.idFile} onChange={(e) => set('idFile', e.target.value)} placeholder="File name or link" /></Field>
           </>
-        ) : null}
+        )}
 
-        <Button full icon={<Icon name="Check" size={18} />} onClick={save} disabled={busy}>{busy ? 'Saving…' : 'Save profile'}</Button>
+        <Button className="w-full" onClick={save} disabled={busy} icon={<Check size={18} />}>
+          {busy ? 'Saving…' : 'Save profile'}
+        </Button>
       </Card>
 
-      <Card className="mt16">
-        <p className="section-title" style={{ marginTop: 0 }}>Contact details</p>
-        <div className="row">
-          <div className="row-main">
-            <div className="profile-name" style={{ fontSize: 16 }}>{user.phone || '—'}</div>
-            <div className="profile-role">Phone (used to log in)</div>
+      {/* Contact card */}
+      <Card className="mt-4">
+        <p className="text-base font-extrabold mb-3 flex items-center gap-2 text-ink-soft">Contact details</p>
+        <div className="flex items-center gap-3 py-3.5 px-0.5 border-b border-line">
+          <div className="flex-1 min-w-0">
+            <div className="text-base font-black">{user.phone || '—'}</div>
+            <div className="text-muted-foreground text-sm">Phone (used to log in)</div>
           </div>
         </div>
         <Field label="Change phone number">
-          <TextInput value={contact.newPhone} onChange={(e) => setContact({ ...contact, newPhone: e.target.value, phoneStep: 'idle' })} placeholder="New number with country code" />
+          <Input value={contact.newPhone} onChange={(e) => setContact({ ...contact, newPhone: e.target.value, phoneStep: 'idle' })} placeholder="New number with country code" />
         </Field>
-        {contact.phoneStep === 'code' ? (
+        {contact.phoneStep === 'code' && (
           <>
-            {contact.devCode ? <Banner tone="info" className="mb12">Dev code for the new number: <b>{contact.devCode}</b></Banner> : null}
-            <Field label="Code sent to the new number"><TextInput value={contact.code} onChange={(e) => setContact({ ...contact, code: e.target.value })} placeholder="6-digit code" /></Field>
+            {contact.devCode && <div className="flex items-start gap-2.5 rounded-[14px] p-3 px-3.5 text-[14.5px] bg-blue-soft text-blue mb-3">Dev code for the new number: <b>{contact.devCode}</b></div>}
+            <Field label="Code sent to the new number"><Input value={contact.code} onChange={(e) => setContact({ ...contact, code: e.target.value })} placeholder="6-digit code" /></Field>
           </>
-        ) : null}
-        <Field label="Current password"><TextInput type="password" value={contact.pw} onChange={(e) => setContact({ ...contact, pw: e.target.value })} autoComplete="current-password" placeholder="Confirm with your password" /></Field>
-        <div className="flex" style={{ gap: 8 }}>
+        )}
+        <Field label="Current password"><Input type="password" value={contact.pw} onChange={(e) => setContact({ ...contact, pw: e.target.value })} autoComplete="current-password" placeholder="Confirm with your password" /></Field>
+        <div className="flex gap-2">
           {contact.phoneStep === 'code' ? (
-            <Button size="md" onClick={confirmPhone} disabled={contactBusy || !contact.code}><Icon name="Check" size={18} /> Confirm phone</Button>
+            <Button onClick={confirmPhone} disabled={contactBusy || !contact.code} icon={<Check size={18} />}>Confirm phone</Button>
           ) : (
-            <Button size="md" onClick={requestPhone} disabled={contactBusy || !contact.newPhone}><Icon name="Phone" size={16} /> Verify new phone</Button>
+            <Button onClick={requestPhone} disabled={contactBusy || !contact.newPhone} icon={<Phone size={16} />}>Verify new phone</Button>
           )}
         </div>
 
-        <hr style={{ border: 0, borderTop: '1px solid var(--line)', margin: '16px 0' }} />
-        <div className="flex" style={{ justifyContent: 'space-between', alignItems: 'center' }}>
+        <div className="h-px bg-border my-4" />
+        <div className="flex items-center justify-between">
           <div>
-            <div className="profile-name" style={{ fontSize: 16 }}>{user.email || 'Not set'}</div>
-            <div className="profile-role">Email</div>
+            <div className="text-base font-black">{user.email || 'Not set'}</div>
+            <div className="text-muted-foreground text-sm">Email</div>
           </div>
-          <div style={{ width: `min(280px, 60%)` }}>
-            <Field label="New email"><TextInput value={contact.email} onChange={(e) => setContact({ ...contact, email: e.target.value })} placeholder="you@example.com" /></Field>
+          <div className="min-[280px]">
+            <Field label="New email"><Input value={contact.email} onChange={(e) => setContact({ ...contact, email: e.target.value })} placeholder="you@example.com" /></Field>
           </div>
         </div>
-        <Button size="md" className="mt12" onClick={saveEmail} disabled={contactBusy || !contact.email}><Icon name="Chat" size={16} /> Save email</Button>
+        <Button className="mt-3" onClick={saveEmail} disabled={contactBusy || !contact.email} icon={<Phone size={16} />}>Save email</Button>
       </Card>
 
-      <Card className="mt16">
-        <p className="section-title" style={{ marginTop: 0 }}>Devices & sessions</p>
-        <Button variant="ghost" size="md" onClick={readSessions} className="mb12"><Icon name="Phone" size={16} /> See active logins</Button>
+      {/* Sessions card */}
+      <Card className="mt-4">
+        <p className="text-base font-extrabold mb-3 flex items-center gap-2 text-ink-soft">Devices & sessions</p>
+        <Button variant="ghost" onClick={readSessions} className="mb-3" icon={<Phone size={16} />}>See active logins</Button>
         {sessions && (
           <div>
-            {sessions.length === 0 ? <p className="small muted">No other active sessions.</p> : null}
+            {sessions.length === 0 && <p className="text-xs text-muted-foreground">No other active sessions.</p>}
             {sessions.map((s) => (
-              <div key={s.id} className="row" style={{ padding: '10px 0' }}>
-                <div className="row-main">
-                  <div className="row-title">{s.device || 'web'}</div>
-                  <div className="row-sub">Signed in {timeAgoLocal(s.created_at)}</div>
+              <div key={s.id} className="flex items-center gap-3 py-2.5 px-0.5 border-b border-line">
+                <div className="flex-1 min-w-0">
+                  <div className="font-bold text-[15.5px]">{s.device || 'web'}</div>
+                  <div className="text-muted-foreground text-[13px] mt-0.5 whitespace-nowrap overflow-hidden text-ellipsis">Signed in {timeAgoLocal(s.created_at)}</div>
                 </div>
-                <button className="ghost-btn" onClick={() => revokeSession(s.id)}>Sign out</button>
+                <button className="py-1.5 px-3 rounded-[10px] border-[1.5px] border-border text-xs font-bold text-ink-soft bg-card hover:bg-paper-2" onClick={() => revokeSession(s.id)}>Sign out</button>
               </div>
             ))}
           </div>
         )}
       </Card>
 
-      <Card className="mt16">
-        <p className="section-title" style={{ marginTop: 0 }}>Security</p>
+      {/* Password card */}
+      <Card className="mt-4">
+        <p className="text-base font-extrabold mb-3 flex items-center gap-2 text-ink-soft">Security</p>
         {!pwOpen ? (
-          <Button variant="ghost" size="md" onClick={() => setPwOpen(true)}><Icon name="Lock" size={16} /> Change password</Button>
+          <Button variant="ghost" onClick={() => setPwOpen(true)} icon={<Lock size={16} />}>Change password</Button>
         ) : (
           <div>
-            <Field label="Current password"><TextInput type="password" value={pw.current} onChange={(e) => setPw({ ...pw, current: e.target.value })} /></Field>
-            <Field label="New password"><TextInput type="password" value={pw.next} onChange={(e) => setPw({ ...pw, next: e.target.value })} /></Field>
-            <Field label="Repeat new password"><TextInput type="password" value={pw.again} onChange={(e) => setPw({ ...pw, again: e.target.value })} /></Field>
-            <div className="flex flex-end">
-              <Button size="md" onClick={changePassword}>Change password</Button>
-              <Button size="md" variant="ghost" onClick={() => setPwOpen(false)}>Cancel</Button>
+            <Field label="Current password"><Input type="password" value={pw.current} onChange={(e) => setPw({ ...pw, current: e.target.value })} /></Field>
+            <Field label="New password"><Input type="password" value={pw.next} onChange={(e) => setPw({ ...pw, next: e.target.value })} /></Field>
+            <Field label="Repeat new password"><Input type="password" value={pw.again} onChange={(e) => setPw({ ...pw, again: e.target.value })} /></Field>
+            <div className="flex justify-end gap-2">
+              <Button onClick={changePassword}>Change password</Button>
+              <Button variant="ghost" onClick={() => setPwOpen(false)}>Cancel</Button>
             </div>
           </div>
         )}
       </Card>
 
-      <Card className="mt16">
-        <p className="section-title" style={{ marginTop: 0 }}>Sign-in code (PIN)</p>
-        <Banner tone="info" className="mb12">
-          <Icon name="Lock" size={16} />
-          Optional extra step when you log in. If you set one, you enter it (or your authenticator code) after your password.
-        </Banner>
-        {user.pinEnabled ? (
-          <Pill tone="green" className="mb12"><Icon name="Shield" size={13} /> PIN is on</Pill>
-        ) : null}
+      {/* PIN card */}
+      <Card className="mt-4">
+        <p className="text-base font-extrabold mb-3 flex items-center gap-2 text-ink-soft">Sign-in code (PIN)</p>
+        <div className="flex items-start gap-2.5 rounded-[14px] p-3 px-3.5 text-[14.5px] bg-blue-soft text-blue mb-3">
+          <Lock size={16} className="mt-0.5 shrink-0" />
+          <span className="flex-1">Optional extra step when you log in. If you set one, you enter it (or your authenticator code) after your password.</span>
+        </div>
+        {user.pinEnabled && (
+          <Pill tone="green" className="mb-3"><Shield size={13} /> PIN is on</Pill>
+        )}
         <Field label="Current password">
-          <TextInput type="password" value={pin.currentPassword} onChange={(e) => setPin({ ...pin, currentPassword: e.target.value })} autoComplete="current-password" />
+          <Input type="password" value={pin.currentPassword} onChange={(e) => setPin({ ...pin, currentPassword: e.target.value })} autoComplete="current-password" />
         </Field>
         <Field label={user.pinEnabled ? 'New PIN' : 'Choose a PIN'}>
-          <TextInput value={pin.value} onChange={(e) => setPin({ ...pin, value: e.target.value })} placeholder="4–8 letters or numbers" maxLength={8} />
+          <Input value={pin.value} onChange={(e) => setPin({ ...pin, value: e.target.value })} placeholder="4–8 letters or numbers" maxLength={8} />
         </Field>
         <Field label="Repeat PIN">
-          <TextInput value={pin.again} onChange={(e) => setPin({ ...pin, again: e.target.value })} placeholder="Same PIN again" maxLength={8} />
+          <Input value={pin.again} onChange={(e) => setPin({ ...pin, again: e.target.value })} placeholder="Same PIN again" maxLength={8} />
         </Field>
-        <div className="flex" style={{ gap: 8 }}>
-          <Button size="md" icon={<Icon name="Check" size={18} />} onClick={savePin} disabled={pinBusy}>
+        <div className="flex gap-2">
+          <Button icon={<Check size={18} />} onClick={savePin} disabled={pinBusy}>
             {pinBusy ? 'Saving…' : user.pinEnabled ? 'Change PIN' : 'Save PIN'}
           </Button>
-          {user.pinEnabled ? (
-            <Button size="md" variant="danger" onClick={clearPin} disabled={pinBusy}><Icon name="Ban" size={16} /> Turn off PIN</Button>
-          ) : null}
+          {user.pinEnabled && (
+            <Button variant="destructive" onClick={clearPin} disabled={pinBusy} icon={<Ban size={16} />}>Turn off PIN</Button>
+          )}
         </div>
       </Card>
 
-      <Card className="mt16">
-        <p className="section-title" style={{ marginTop: 0 }}>Authenticator (TOTP)</p>
+      {/* TOTP card */}
+      <Card className="mt-4">
+        <p className="text-base font-extrabold mb-3 flex items-center gap-2 text-ink-soft">Authenticator (TOTP)</p>
         {user.totpEnabled ? (
           <>
-            <Pill tone="green" className="mb12"><Icon name="Shield" size={13} /> Authenticator is on</Pill>
-            <Field label="Current password"><TextInput type="password" value={otpDisable.currentPassword} onChange={(e) => setOtpDisable({ ...otpDisable, currentPassword: e.target.value })} autoComplete="current-password" /></Field>
-            <Field label="Current authenticator code"><TextInput value={otpDisable.code} onChange={(e) => setOtpDisable({ ...otpDisable, code: e.target.value })} placeholder="6-digit code" /></Field>
-            <Button size="md" variant="danger" icon={<Icon name="Ban" size={16} />} onClick={disableTotp} disabled={otpBusy}>Turn off authenticator</Button>
+            <Pill tone="green" className="mb-3"><Shield size={13} /> Authenticator is on</Pill>
+            <Field label="Current password"><Input type="password" value={otpDisable.currentPassword} onChange={(e) => setOtpDisable({ ...otpDisable, currentPassword: e.target.value })} autoComplete="current-password" /></Field>
+            <Field label="Current authenticator code"><Input value={otpDisable.code} onChange={(e) => setOtpDisable({ ...otpDisable, code: e.target.value })} placeholder="6-digit code" /></Field>
+            <Button variant="destructive" icon={<Ban size={16} />} onClick={disableTotp} disabled={otpBusy}>Turn off authenticator</Button>
           </>
         ) : otpSetup ? (
           <>
-            <Banner tone="warn" className="mb12">
+            <div className="flex items-start gap-2.5 rounded-[14px] p-3 px-3.5 text-[14.5px] bg-amber-soft text-[#8f5a08] mb-3">
               Add this secret to Google Authenticator (or any TOTP app), then confirm with the code it shows.
-            </Banner>
-            <p className="small muted">Secret key</p>
-            <div className="code-box">{otpSetup.secret}</div>
-            <p className="small muted">Or scan this (manual entry) — email, secret and issuer are below:</p>
-            <div className="code-box" style={{ wordBreak: 'break-all' }}>{otpSetup.otpauth}</div>
-            <Field label="Code from your authenticator app"><TextInput value={otpEnable.code} onChange={(e) => setOtpEnable({ ...otpEnable, code: e.target.value })} placeholder="6-digit code" /></Field>
-            <div className="flex" style={{ gap: 8 }}>
-              <Button size="md" icon={<Icon name="Shield" size={16} />} onClick={confirmTotp} disabled={otpBusy || !otpEnable.code}>Turn on authenticator</Button>
-              <Button size="md" variant="ghost" onClick={() => setOtpSetup(null)}>Cancel</Button>
+            </div>
+            <p className="text-xs text-muted-foreground">Secret key</p>
+              <div className="font-mono text-[13px] leading-relaxed py-2.5 px-3 my-1 mb-3.5 bg-paper-2 border-[1.5px] border-dashed border-line rounded-[10px] text-ink select-all">{otpSetup.secret}</div>
+            <p className="text-xs text-muted-foreground">Or scan this (manual entry) — email, secret and issuer are below:</p>
+            <div className="font-mono text-[13px] leading-relaxed py-2.5 px-3 my-1 mb-3.5 bg-paper-2 border-[1.5px] border-dashed border-line rounded-[10px] text-ink select-all break-all">{otpSetup.otpauth}</div>
+            <Field label="Code from your authenticator app"><Input value={otpEnable.code} onChange={(e) => setOtpEnable({ ...otpEnable, code: e.target.value })} placeholder="6-digit code" /></Field>
+            <div className="flex gap-2">
+              <Button icon={<Shield size={16} />} onClick={confirmTotp} disabled={otpBusy || !otpEnable.code}>Turn on authenticator</Button>
+              <Button variant="ghost" onClick={() => setOtpSetup(null)}>Cancel</Button>
             </div>
           </>
         ) : (
           <>
-            <p className="small muted">Use the Google Authenticator app (or any TOTP app) for an extra code on top of your password.</p>
-            <Field label="Current password"><TextInput type="password" value={otpEnable.currentPassword} onChange={(e) => setOtpEnable({ ...otpEnable, currentPassword: e.target.value })} autoComplete="current-password" /></Field>
-            <Button size="md" icon={<Icon name="Shield" size={16} />} onClick={startTotp} disabled={otpBusy}>{otpBusy ? 'Starting…' : 'Set up authenticator'}</Button>
+            <p className="text-xs text-muted-foreground mb-3">Use the Google Authenticator app (or any TOTP app) for an extra code on top of your password.</p>
+            <Field label="Current password"><Input type="password" value={otpEnable.currentPassword} onChange={(e) => setOtpEnable({ ...otpEnable, currentPassword: e.target.value })} autoComplete="current-password" /></Field>
+            <Button icon={<Shield size={16} />} onClick={startTotp} disabled={otpBusy}>{otpBusy ? 'Starting…' : 'Set up authenticator'}</Button>
           </>
         )}
       </Card>
 
-      <Card className="mt16">
-        <p className="section-title" style={{ marginTop: 0 }}>Account</p>
-        <div className="flex" style={{ justifyContent: 'space-between' }}>
-          <Button variant="ghost" size="md" onClick={logout}><Icon name="Arrow" size={16} /> Log out</Button>
+      {/* Account card */}
+      <Card className="mt-4 mb-8">
+        <p className="text-base font-extrabold mb-3 flex items-center gap-2 text-ink-soft">Account</p>
+        <div className="flex justify-between items-center">
+          <Button variant="ghost" onClick={logout} icon={<LogOut size={16} />}>Log out</Button>
           {!delOpen ? (
-            <Button variant="danger" size="md" onClick={() => setDelOpen(true)}><Icon name="Ban" size={16} /> Delete account</Button>
+            <Button variant="destructive" onClick={() => setDelOpen(true)} icon={<Ban size={16} />}>Delete account</Button>
           ) : (
-            <div style={{ flex: 1 }}>
-              <Field label="Re-enter password to confirm"><TextInput type="password" value={delPw} onChange={(e) => setDelPw(e.target.value)} /></Field>
-              <div className="flex flex-end">
-                <Button size="md" variant="danger" onClick={deleteAccount}>Delete my account</Button>
-                <Button size="md" variant="ghost" onClick={() => { setDelOpen(false); setDelPw(''); }}>Cancel</Button>
+            <div className="flex-1">
+              <Field label="Re-enter password to confirm"><Input type="password" value={delPw} onChange={(e) => setDelPw(e.target.value)} /></Field>
+              <div className="flex justify-end gap-2">
+                <Button variant="destructive" onClick={deleteAccount}>Delete my account</Button>
+                <Button variant="ghost" onClick={() => { setDelOpen(false); setDelPw(''); }}>Cancel</Button>
               </div>
             </div>
           )}
@@ -433,20 +520,27 @@ export default function Profile() {
   );
 }
 
-function StepperLite({ value, onChange }) {
+function TagPicker({ options, value, onChange, multi = true, max = 5 }) {
+  const toggle = (name) => {
+    if (multi) {
+      const has = value.includes(name);
+      if (has) onChange(value.filter((v) => v !== name));
+      else if (value.length < max) onChange([...value, name]);
+    } else {
+      onChange([name]);
+    }
+  };
   return (
-    <div className="stepper-row" style={{ marginTop: 4 }}>
-      <button type="button" className="stepper-btn" onClick={() => onChange(Math.max(0, value - 1))}>−</button>
-      <div className="stepper-val"><span className="stepper-big">{value}</span><span className="stepper-unit">years</span></div>
-      <button type="button" className="stepper-btn" onClick={() => onChange(Math.min(45, value + 1))}>+</button>
+    <div className="flex flex-wrap gap-2.5">
+      {options.map((o) => {
+        const on = value.includes(o.name);
+        return (
+          <button type="button" key={o.name} className={`inline-flex items-center gap-2 py-2.5 px-3.5 border-[1.5px] rounded-[14px] bg-card font-bold text-[14.5px] transition-all duration-100 ${on ? 'border-primary bg-secondary text-accent-dark' : 'border-border text-ink-soft'}`} onClick={() => toggle(o.name)}>
+            <span>{o.name}</span>
+            {on && <Check size={14} className="text-primary" />}
+          </button>
+        );
+      })}
     </div>
   );
-}
-
-function timeAgoLocal(iso) {
-  const m = Math.floor((Date.now() - new Date(iso).getTime()) / 60000);
-  if (m < 60) return `${m}m ago`;
-  const h = Math.floor(m / 60);
-  if (h < 24) return `${h}h ago`;
-  return `${Math.floor(h / 24)}d ago`;
 }

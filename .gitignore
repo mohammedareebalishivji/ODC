@@ -5,3 +5,4 @@ server/data/
 .DS_Store
 .env
 .env.local
+.aider*

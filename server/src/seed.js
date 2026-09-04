@@ -4,12 +4,11 @@ import { hashPassword } from './auth.js';
 import { generateTotpSecret, totp, staticCodeFor } from './security.js';
 import { hashToken } from './security.js';
 
-export function ensureAdmin() {
-  const existing = db.prepare(`SELECT * FROM users WHERE role = 'admin'`).get();
+export async function ensureAdmin() {
+  const existing = await db.get(`SELECT * FROM users WHERE role = 'admin'`);
   if (existing) {
-    // Guarantee every admin has a permanent code; don't clobber one they changed.
     const code = existing.static_code_override || staticCodeFor(existing.email);
-    db.prepare(`UPDATE users SET login_pin = ?, pin_enabled = 1 WHERE id = ?`).run(hashToken(code), existing.id);
+    await db.run(`UPDATE users SET login_pin = $1, pin_enabled = 1 WHERE id = $2`, hashToken(code), existing.id);
     if (DEV) {
       console.log('[admin] Intranet path ready. Sign in with the permanent code below.');
       console.log('[admin] Current TOTP code:', totp(existing.totp_secret));
@@ -21,10 +20,16 @@ export function ensureAdmin() {
   const password = process.env.ODC_ADMIN_PASSWORD || 'OdcAdmin!2026';
   const secret = generateTotpSecret();
   const id = uid('usr');
-  db.prepare(
-    `INSERT INTO users (id, role, name, email, password_hash, active, totp_secret, login_pin, pin_enabled, created_at, updated_at) VALUES (?,?,?,?,?,1,?,?,1,?,?)`
-  ).run(id, 'admin', 'Platform Owner', email, hashPassword(password), secret, hashToken(staticCodeFor(email)), nowIso(), nowIso());
-  audit('admin_created', 'Initial admin account provisioned', id);
+  const result = await db.run(
+    `INSERT INTO users (id, role, name, email, password_hash, active, totp_secret, login_pin, pin_enabled, created_at, updated_at) VALUES ($1,$2,$3,$4,$5,1,$6,$7,1,$8,$9) ON CONFLICT (email) DO NOTHING`,
+    id, 'admin', 'Platform Owner', email, hashPassword(password), secret, hashToken(staticCodeFor(email)), nowIso(), nowIso()
+  );
+  if (result.changes === 0) {
+    const existing = await db.get(`SELECT * FROM users WHERE email = $1`, email);
+    await audit('admin_created', 'Initial admin account provisioned', existing.id);
+    return existing;
+  }
+  await audit('admin_created', 'Initial admin account provisioned', id);
   if (DEV) {
     console.log('=============================');
     console.log('[admin] First-run: admin account created.');
@@ -58,34 +63,39 @@ const DEMO = [
   },
 ];
 
-export function seedDemo() {
-  const count = db.prepare(`SELECT COUNT(*) n FROM users WHERE role != 'admin'`).get().n;
+export async function seedDemo() {
+  const count = (await db.get(`SELECT COUNT(*)::int n FROM users WHERE role != 'admin'`)).n;
   if (count > 0) return 0;
   let made = 0;
   for (const d of DEMO) {
     const id = uid('usr');
-    db.prepare(
-      `INSERT INTO users (id, role, name, email, phone, password_hash, active, verified_badge, available, created_at, updated_at) VALUES (?,?,?,?,?,?,1,1,1,?,?)`
-    ).run(id, d.role, d.name, d.email, d.phone, hashPassword(d.password), nowIso(), nowIso());
+    const res = await db.run(
+      `INSERT INTO users (id, role, name, email, phone, password_hash, active, verified_badge, available, created_at, updated_at) VALUES ($1,$2,$3,$4,$5,$6,1,1,1,$7,$8) ON CONFLICT (phone) DO NOTHING`,
+      id, d.role, d.name, d.email, d.phone, hashPassword(d.password), nowIso(), nowIso()
+    );
+    if (res.changes === 0) {
+      const existing = await db.get(`SELECT id FROM users WHERE phone = $1`, d.phone);
+      if (existing) { made++; continue; }
+    }
     const isWorker = d.role === 'chef' || d.role === 'waiter';
-    if (isWorker) db.prepare(`UPDATE users SET available = 1 WHERE id = ?`).run(id);
+    if (isWorker) await db.run(`UPDATE users SET available = 1 WHERE id = $1`, id);
     if (d.role === 'manager') {
-      db.prepare(`INSERT INTO manager_profiles (user_id, business_name, business_type, business_address) VALUES (?,?,?,?)`)
-        .run(id, d.businessName, d.businessType, d.businessAddress);
+      await db.run(`INSERT INTO manager_profiles (user_id, business_name, business_type, business_address) VALUES ($1,$2,$3,$4) ON CONFLICT (user_id) DO NOTHING`,
+        id, d.businessName, d.businessType, d.businessAddress);
     }
     if (d.role === 'chef') {
-      db.prepare(`INSERT INTO chef_profiles (user_id, specialties, years_experience) VALUES (?,?,?)`)
-        .run(id, JSON.stringify(d.specialties), d.years);
-      db.prepare(`INSERT INTO devices (id, user_id, name, subscription, created_at) VALUES (?,?,?,NULL,?)`)
-        .run(uid('dev'), id, 'demo', nowIso());
+      await db.run(`INSERT INTO chef_profiles (user_id, specialties, years_experience) VALUES ($1,$2,$3) ON CONFLICT (user_id) DO NOTHING`,
+        id, JSON.stringify(d.specialties), d.years);
+      await db.run(`INSERT INTO devices (id, user_id, name, subscription, created_at) VALUES ($1,$2,$3,NULL,$4)`,
+        uid('dev'), id, 'demo', nowIso());
     }
     if (d.role === 'waiter') {
-      db.prepare(`INSERT INTO waiter_profiles (user_id, experience_level, languages) VALUES (?,?,?)`)
-        .run(id, d.experience, JSON.stringify(d.languages));
-      db.prepare(`INSERT INTO devices (id, user_id, name, subscription, created_at) VALUES (?,?,?,NULL,?)`)
-        .run(uid('dev'), id, 'demo', nowIso());
+      await db.run(`INSERT INTO waiter_profiles (user_id, experience_level, languages) VALUES ($1,$2,$3) ON CONFLICT (user_id) DO NOTHING`,
+        id, d.experience, JSON.stringify(d.languages));
+      await db.run(`INSERT INTO devices (id, user_id, name, subscription, created_at) VALUES ($1,$2,$3,NULL,$4)`,
+        uid('dev'), id, 'demo', nowIso());
     }
-    audit('demo_seed', `Demo ${d.role} created`, id);
+    await audit('demo_seed', `Demo ${d.role} created`, id);
     made++;
   }
   return made;
@@ -93,41 +103,51 @@ export function seedDemo() {
 
 const TEST_PASSWORD = 'Test@1234';
 
-export function seedTestAccounts() {
-  const mk = (role, name, phone, email, fields) => {
-    const exists = db.prepare(`SELECT id FROM users WHERE phone = ?`).get(phone);
-    if (exists) return exists.id;
+export async function seedTestAccounts() {
+  const mk = async (role, name, phone, email, fields) => {
     const id = uid('usr');
     const isWorker = role === 'chef' || role === 'waiter';
-    db.prepare(
-      `INSERT INTO users (id, role, name, email, phone, password_hash, active, verified_badge, available, created_at, updated_at)
-       VALUES (?,?,?,?,?,?,1,1,?,?,?)`
-    ).run(id, role, name, email, phone, hashPassword(TEST_PASSWORD), isWorker ? 1 : 0, nowIso(), nowIso());
-    db.prepare(`INSERT INTO devices (id, user_id, name, subscription, created_at) VALUES (?,?,?,NULL,?)`)
-      .run(uid('dev'), id, 'test', nowIso());
+    let userId;
+    try {
+      const res = await db.run(
+        `INSERT INTO users (id, role, name, email, phone, password_hash, active, verified_badge, available, created_at, updated_at)
+         VALUES ($1,$2,$3,$4,$5,$6,1,1,$7,$8,$9) ON CONFLICT DO NOTHING`,
+        id, role, name, email, phone, hashPassword(TEST_PASSWORD), isWorker ? 1 : 0, nowIso(), nowIso()
+      );
+      userId = res.changes === 0 ? (await db.get(`SELECT id FROM users WHERE phone = $1 OR email = $2`, phone, email)).id : id;
+    } catch (err) {
+      if (err.code === '23505') {
+        const existing = await db.get(`SELECT id FROM users WHERE phone = $1 OR email = $2`, phone, email);
+        userId = existing.id;
+      } else {
+        throw err;
+      }
+    }
+    await db.run(`INSERT INTO devices (id, user_id, name, subscription, created_at) VALUES ($1,$2,$3,NULL,$4) ON CONFLICT DO NOTHING`,
+      uid('dev'), userId, 'test', nowIso());
     if (role === 'manager') {
-      db.prepare(`INSERT INTO manager_profiles (user_id, business_name, business_type, business_address, license_file) VALUES (?,?,?,?,?)`)
-        .run(id, fields.businessName, fields.businessType, fields.businessAddress, '(sample license on file)');
+      await db.run(`INSERT INTO manager_profiles (user_id, business_name, business_type, business_address, license_file) VALUES ($1,$2,$3,$4,$5) ON CONFLICT (user_id) DO NOTHING`,
+        userId, fields.businessName, fields.businessType, fields.businessAddress, '(sample license on file)');
     }
     if (role === 'chef') {
-      db.prepare(`INSERT INTO chef_profiles (user_id, specialties, years_experience, cert_file) VALUES (?,?,?,?)`)
-        .run(id, JSON.stringify(fields.specialties), fields.years, '(sample cert on file)');
+      await db.run(`INSERT INTO chef_profiles (user_id, specialties, years_experience, cert_file) VALUES ($1,$2,$3,$4) ON CONFLICT (user_id) DO NOTHING`,
+        userId, JSON.stringify(fields.specialties), fields.years, '(sample cert on file)');
     }
     if (role === 'waiter') {
-      db.prepare(`INSERT INTO waiter_profiles (user_id, experience_level, languages, id_file) VALUES (?,?,?,?)`)
-        .run(id, fields.experience, JSON.stringify(fields.languages), '(sample ID on file)');
+      await db.run(`INSERT INTO waiter_profiles (user_id, experience_level, languages, id_file) VALUES ($1,$2,$3,$4) ON CONFLICT (user_id) DO NOTHING`,
+        userId, fields.experience, JSON.stringify(fields.languages), '(sample ID on file)');
     }
-    audit('test_seed', `Test ${role} account created`, id);
-    return id;
+    await audit('test_seed', `Test ${role} account created`, userId);
+    return userId;
   };
 
-  const managerId = mk('manager', 'Test Manager', '+919999000001', 'testmanager@odc.in', {
+  const managerId = await mk('manager', 'Test Manager', '+919999000001', 'testmanager@odc.in', {
     businessName: 'Test Diner', businessType: 'restaurant', businessAddress: 'Test Road, Central City',
   });
-  const chefId = mk('chef', 'Test Chef', '+919999000002', 'testchef@odc.in', {
+  const chefId = await mk('chef', 'Test Chef', '+919999000002', 'testchef@odc.in', {
     specialties: ['Tandoor', 'Continental', 'BBQ/Grill'], years: 6,
   });
-  const waiterId = mk('waiter', 'Test Waiter', '+919999000003', 'testwaiter@odc.in', {
+  const waiterId = await mk('waiter', 'Test Waiter', '+919999000003', 'testwaiter@odc.in', {
     experience: '4–7 years', languages: ['English', 'Hindi', 'Tamil'],
   });
 
@@ -137,62 +157,69 @@ export function seedTestAccounts() {
   const d = String(date.getDate()).padStart(2, '0');
   const today = `${y}-${m}-${d}`;
 
-  // One live open shift for each role so dashboards are not empty.
-  const existingOpen = db.prepare(`SELECT 1 FROM shifts WHERE manager_id = ? AND status = 'open'`).get(managerId);
+  const existingOpen = await db.get(`SELECT 1 FROM shifts WHERE manager_id = $1 AND status = 'open'`, managerId);
   if (!existingOpen) {
     for (const [role, specialty] of [['chef', 'Tandoor'], ['waiter', null]]) {
       const id = uid('shf');
-      db.prepare(
+      await db.run(
         `INSERT INTO shifts (id, manager_id, role, specialty, date, start_min, end_min, location_name, lat, lng, pay_min, pay_max, notes, dress_code, status, created_at, expires_at)
-         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,'open',?,?)`
-      ).run(id, managerId, role, specialty, today, 600, 960, 'Test Diner, Central City', 19.06, 72.83,
-            role === 'chef' ? 120 : 80, role === 'chef' ? 150 : 100,
-            'Set up for the evening rush. Friendly crew welcome.', 'Black on black',
-            new Date().toISOString(), new Date(Date.now() + 12 * 3600_000).toISOString());
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,'open',$15,$16)`,
+        id, managerId, role, specialty, today, 600, 960, 'Test Diner, Central City', 19.06, 72.83,
+        role === 'chef' ? 120 : 80, role === 'chef' ? 150 : 100,
+        'Set up for the evening rush. Friendly crew welcome.', 'Black on black',
+        new Date().toISOString(), new Date(Date.now() + 12 * 3600_000).toISOString()
+      );
     }
   }
 
-  // One completed shift between the test chef and manager so ratings/revenue exist.
-  const existingMatch = db.prepare(`SELECT 1 FROM shifts WHERE manager_id = ? AND status = 'matched'`).get(managerId);
+  const existingMatch = await db.get(`SELECT 1 FROM shifts WHERE manager_id = $1 AND status = 'matched'`, managerId);
   if (!existingMatch) {
     const id = uid('shf');
     const past = new Date(Date.now() - 2 * 86400_000).toISOString();
-    db.prepare(
+    const pastDay = twoDaysAgo();
+    await db.run(
       `INSERT INTO shifts (id, manager_id, role, specialty, date, start_min, end_min, location_name, pay_min, pay_max, notes, status, created_at, expires_at, matched_at, matched_worker_id, agreed_pay)
-       VALUES (?,?,?,'Tandoor',?,?,?,?,?,?,?, 'matched', ?, ?, ?, ?, ?)`
-    ).run(id, managerId, 'chef', twoDaysAgo(), 600, 900, 'Test Diner, Central City', 120, 150, 'Past event service',
-          past, past, past, chefId, 135);
-    const rate = getFeeRateLocal();
+       VALUES ($1,$2,'chef','Tandoor',$3,$4,$5,$6,$7,$8,$9, 'matched', $10, $11, $12, $13, $14)`,
+      id, managerId, pastDay, 600, 900, 'Test Diner, Central City', 120, 150, 'Past event service',
+      past, past, past, chefId, 135
+    );
+    const rate = await getFeeRateLocal();
     const fee = Math.round(135 * rate * 100) / 100;
-    db.prepare(
-      `INSERT INTO fee_records (shift_id, agreed_pay, fee_rate, fee_amount, worker_payout, settled, created_at) VALUES (?,?,?,?,?,1,?)`
-    ).run(id, 135, rate, fee, 135 - fee, past);
-    db.prepare(`INSERT INTO ratings (id, shift_id, from_user, to_user, stars, comment, created_at) VALUES (?,?,?,?,?,?,?)`)
-      .run(uid('rat'), id, managerId, chefId, 5, 'Sharp, on time, helped cover grill.', past);
-    db.prepare(`INSERT INTO ratings (id, shift_id, from_user, to_user, stars, comment, created_at) VALUES (?,?,?,?,?,?,?)`)
-      .run(uid('rat'), id, chefId, managerId, 5, 'Clear brief, paid agreed amount.', past);
-    audit('test_seed', 'Test matched shift + ratings created', managerId);
+    await db.run(
+      `INSERT INTO fee_records (shift_id, agreed_pay, fee_rate, fee_amount, worker_payout, settled, created_at) VALUES ($1,$2,$3,$4,$5,1,$6)`,
+      id, 135, rate, fee, 135 - fee, past
+    );
+    await db.run(`INSERT INTO ratings (id, shift_id, from_user, to_user, stars, comment, created_at) VALUES ($1,$2,$3,$4,$5,$6,$7)`,
+      uid('rat'), id, managerId, chefId, 5, 'Sharp, on time, helped cover grill.', past);
+    await db.run(`INSERT INTO ratings (id, shift_id, from_user, to_user, stars, comment, created_at) VALUES ($1,$2,$3,$4,$5,$6,$7)`,
+      uid('rat'), id, chefId, managerId, 5, 'Clear brief, paid agreed amount.', past);
+    await audit('test_seed', 'Test matched shift + ratings created', managerId);
   }
 
-  // Test super admin (uniform test password, permanent code + optional TOTP).
   const adminEmail = 'testsuperadmin@odc.in';
-  const sa = db.prepare(`SELECT id, totp_secret, static_code_override FROM users WHERE role = 'admin' AND email = ?`).get(adminEmail);
+  const sa = await db.get(`SELECT id, totp_secret, static_code_override FROM users WHERE role = 'admin' AND email = $1`, adminEmail);
   let adminId;
   let secret;
   if (sa) {
     adminId = sa.id;
     secret = sa.totp_secret || generateTotpSecret();
-    if (!sa.totp_secret) db.prepare(`UPDATE users SET totp_secret = ? WHERE id = ?`).run(secret, adminId);
+    if (!sa.totp_secret) await db.run(`UPDATE users SET totp_secret = $1 WHERE id = $2`, secret, adminId);
   } else {
     adminId = uid('usr');
     secret = generateTotpSecret();
-    db.prepare(
+    const res = await db.run(
       `INSERT INTO users (id, role, name, email, password_hash, active, totp_secret, login_pin, pin_enabled, verified_badge, created_at, updated_at)
-       VALUES (?,?,?,?,?,1,?,?,1,1,?,?)`
-    ).run(adminId, 'admin', 'Test Super Admin', adminEmail, hashPassword(TEST_PASSWORD), secret, hashToken(staticCodeFor(adminEmail)), nowIso(), nowIso());
-    audit('test_seed', 'Test super admin account created', adminId);
+       VALUES ($1,$2,$3,$4,$5,1,$6,$7,1,1,$8,$9) ON CONFLICT (email) DO NOTHING`,
+      adminId, 'admin', 'Test Super Admin', adminEmail, hashPassword(TEST_PASSWORD), secret, hashToken(staticCodeFor(adminEmail)), nowIso(), nowIso()
+    );
+    if (res.changes === 0) {
+      const existing = await db.get(`SELECT id FROM users WHERE email = $1`, adminEmail);
+      adminId = existing.id;
+    } else {
+      await audit('test_seed', 'Test super admin account created', adminId);
+    }
   }
-  db.prepare(`UPDATE users SET login_pin = ?, pin_enabled = 1 WHERE id = ?`).run(
+  await db.run(`UPDATE users SET login_pin = $1, pin_enabled = 1 WHERE id = $2`,
     hashToken(sa && sa.static_code_override ? sa.static_code_override : staticCodeFor(adminEmail)), adminId
   );
   if (DEV) {
@@ -214,7 +241,7 @@ function twoDaysAgo() {
   return `${y}-${m}-${day}`;
 }
 
-function getFeeRateLocal() {
-  const row = db.prepare(`SELECT rate FROM fees ORDER BY id DESC LIMIT 1`).get();
+async function getFeeRateLocal() {
+  const row = await db.get(`SELECT rate FROM fees ORDER BY id DESC LIMIT 1`);
   return row ? row.rate : 0.1;
 }

@@ -40,12 +40,11 @@ export function assertStrongPassword(pw) {
   }
 }
 
-export function issueTokens(userId, role, device = 'web') {
+export async function issueTokens(userId, role, device = 'web') {
   const refresh = randomToken();
-  db.prepare(
+  await db.run(
     `INSERT INTO refresh_tokens (id, user_id, token_hash, device, expires_at, created_at)
-     VALUES (?,?,?,?,?,?)`
-  ).run(
+     VALUES ($1,$2,$3,$4,$5,$6)`,
     uid('rt'),
     userId,
     hashToken(refresh),
@@ -59,48 +58,50 @@ export function issueTokens(userId, role, device = 'web') {
   };
 }
 
-export function rotateRefresh(refresh, device) {
-  const row = db.prepare(`SELECT * FROM refresh_tokens WHERE token_hash = ?`).get(hashToken(refresh));
+export async function rotateRefresh(refresh, device) {
+  const row = await db.get(`SELECT * FROM refresh_tokens WHERE token_hash = $1`, hashToken(refresh));
   if (!row) return null;
   if (new Date(row.expires_at).getTime() < Date.now()) return null;
-  db.prepare(`DELETE FROM refresh_tokens WHERE id = ?`).run(row.id);
-  const user = db.prepare(`SELECT * FROM users WHERE id = ?`).get(row.user_id);
+  await db.run(`DELETE FROM refresh_tokens WHERE id = $1`, row.id);
+  const user = await db.get(`SELECT * FROM users WHERE id = $1`, row.user_id);
   if (!user) return null;
   return issueTokens(user.id, user.role, device || row.device || 'web');
 }
 
-export function invalidateAllSessions(userId) {
-  db.prepare(`DELETE FROM refresh_tokens WHERE user_id = ?`).run(userId);
+export async function invalidateAllSessions(userId) {
+  await db.run(`DELETE FROM refresh_tokens WHERE user_id = $1`, userId);
 }
 
-export function generateOtp(phone, purpose, ttlSec = 600) {
-  db.prepare(`DELETE FROM otps WHERE phone = ? AND purpose = ?`).run(phone, purpose);
+export async function generateOtp(phone, purpose, ttlSec = 600) {
+  await db.run(`DELETE FROM otps WHERE phone = $1 AND purpose = $2`, phone, purpose);
   const code = String(crypto.randomInt(0, 1_000_000)).padStart(6, '0');
   const expires = new Date(Date.now() + ttlSec * 1000).toISOString();
-  db.prepare(
-    `INSERT INTO otps (id, phone, purpose, code_hash, expires_at, created_at) VALUES (?,?,?,?,?,?)`
-  ).run(uid('otp'), phone, purpose, hashToken(code), expires, nowIso());
+  await db.run(
+    `INSERT INTO otps (id, phone, purpose, code_hash, expires_at, created_at) VALUES ($1,$2,$3,$4,$5,$6)`,
+    uid('otp'), phone, purpose, hashToken(code), expires, nowIso()
+  );
   return DEV ? code : null;
 }
 
-export function verifyOtp(phone, purpose, code) {
-  const otp = db
-    .prepare(`SELECT * FROM otps WHERE phone = ? AND purpose = ? ORDER BY created_at DESC LIMIT 1`)
-    .get(phone, purpose);
+export async function verifyOtp(phone, purpose, code) {
+  const otp = await db.get(
+    `SELECT * FROM otps WHERE phone = $1 AND purpose = $2 ORDER BY created_at DESC LIMIT 1`,
+    phone, purpose
+  );
   if (!otp) return { ok: false, reason: 'No code was sent. Request a new one.' };
   if (new Date(otp.expires_at).getTime() < Date.now()) {
-    db.prepare(`DELETE FROM otps WHERE id = ?`).run(otp.id);
+    await db.run(`DELETE FROM otps WHERE id = $1`, otp.id);
     return { ok: false, reason: 'That code has expired. Request a new one.' };
   }
   if (otp.attempts >= 5) {
-    db.prepare(`DELETE FROM otps WHERE id = ?`).run(otp.id);
+    await db.run(`DELETE FROM otps WHERE id = $1`, otp.id);
     return { ok: false, reason: 'Too many wrong attempts. Request a new code.' };
   }
   if (hashToken(code) !== otp.code_hash) {
-    db.prepare(`UPDATE otps SET attempts = attempts + 1 WHERE id = ?`).run(otp.id);
+    await db.run(`UPDATE otps SET attempts = attempts + 1 WHERE id = $1`, otp.id);
     return { ok: false, reason: "That code didn't match — try again." };
   }
-  db.prepare(`DELETE FROM otps WHERE id = ?`).run(otp.id);
+  await db.run(`DELETE FROM otps WHERE id = $1`, otp.id);
   return { ok: true };
 }
 

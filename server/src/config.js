@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 export const DATA_DIR = path.join(__dirname, '..', 'data');
-export const DB_PATH = path.join(DATA_DIR, 'odc.db');
+export const DB_PATH = process.env.ODC_DB_PATH || path.join(DATA_DIR, 'odc.db');
 export const DEV = process.env.NODE_ENV !== 'production';
 
 fs.mkdirSync(DATA_DIR, { recursive: true });
@@ -20,6 +20,7 @@ function loadOrCreateSecret(file, fallbackLen = 48) {
 
 export const JWT_SECRET = process.env.ODC_JWT_SECRET || loadOrCreateSecret('jwt.secret');
 export const PORT = Number(process.env.PORT || 4000);
+export const DATABASE_URL = process.env.DATABASE_URL || 'postgresql://localhost:5432/odc';
 
 export function uid(prefix) {
   return `${prefix}_${crypto.randomBytes(6).toString('hex')}`;

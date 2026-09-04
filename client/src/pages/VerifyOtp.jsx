@@ -2,7 +2,21 @@ import React, { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../state';
 import { api } from '../api';
-import { logoTop, Banner, Button, toast } from '../ui';
+import { Button } from '../components/ui';
+import { toast } from '../ui';
+import { ChefIcon } from '../icons';
+import { AlertCircle } from 'lucide-react';
+
+function LogoTop() {
+  return (
+    <div className="flex justify-center mb-4.5">
+      <span className="font-black text-[19px] tracking-tight inline-flex items-center gap-2 text-ink">
+        <ChefIcon size={36} className="logo-icon" />
+        <span>O<span className="text-primary">.</span>D<span className="text-primary">.</span>C</span>
+      </span>
+    </div>
+  );
+}
 
 export default function VerifyOtp() {
   const { finalizeSignup } = useAuth();
@@ -82,18 +96,25 @@ export default function VerifyOtp() {
   };
 
   return (
-    <div className="auth-wrap">
-      <div className="auth-panel">
-        {logoTop()}
-        <h1 className="auth-title">Enter the code</h1>
-        <p className="auth-sub">We sent a 6-digit code by SMS to {phone || 'your number'}. It expires in 10 minutes.</p>
-        {err ? <Banner tone="danger">{err}</Banner> : null}
-        <div className="otp-row mt12">
+    <div className="min-h-screen flex flex-col items-center justify-center p-6 bg-background">
+      <div className="w-full max-w-[440px] bg-card border border-border rounded-3xl p-7 shadow-[0_8px_24px_rgba(46,53,51,0.07)]">
+        <LogoTop />
+        <h1 className="text-2xl font-black text-center tracking-tight">Enter the code</h1>
+        <p className="text-muted-foreground text-center mt-2 mb-5.5 text-[14.5px] max-w-[320px] mx-auto leading-relaxed">
+          We sent a 6-digit code by SMS to {phone || 'your number'}. It expires in 10 minutes.
+        </p>
+        {err && (
+          <div className="flex items-start gap-2.5 rounded-[14px] p-3 px-3.5 text-[14.5px] bg-red-soft text-red mb-4">
+            <AlertCircle className="w-4 h-4 mt-0.5 shrink-0" />
+            <span className="flex-1">{err}</span>
+          </div>
+        )}
+        <div className="flex gap-2.5 justify-center my-3">
           {digits.map((d, i) => (
             <input
               key={i}
               ref={(el) => (boxes.current[i] = el)}
-              className="otp-box"
+              className="w-[52px] h-[60px] text-center text-2xl font-extrabold border-[1.5px] border-border rounded-[14px] bg-paper outline-none text-ink focus:border-primary focus:bg-white focus:shadow-[0_0_0_3px_rgba(74,138,111,0.14)]"
               inputMode="numeric"
               autoComplete="one-time-code"
               value={d}
@@ -104,16 +125,16 @@ export default function VerifyOtp() {
             />
           ))}
         </div>
-        <div className="text-center mt16">
-          <Button full onClick={submit} disabled={busy || code.length !== 6}>
+        <div className="text-center mt-4">
+          <Button className="w-full" onClick={submit} disabled={busy || code.length !== 6}>
             {busy ? 'Verifying…' : 'Verify my number'}
           </Button>
         </div>
-        <p className="text-center small mt16 muted">
+        <p className="text-center text-xs mt-4 text-muted-foreground">
           {resendIn > 0 ? (
             <>Resend code in 0:{String(resendIn).padStart(2, '0')}</>
           ) : (
-            <button className="small" style={{ color: 'var(--accent-dark)', fontWeight: 700 }} onClick={resend}>Did not get it? Resend code</button>
+            <button className="text-xs font-bold text-accent-dark" onClick={resend}>Did not get it? Resend code</button>
           )}
         </p>
       </div>

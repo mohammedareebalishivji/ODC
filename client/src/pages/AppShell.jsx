@@ -1,10 +1,24 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { Outlet, NavLink, useNavigate } from 'react-router-dom';
 import { useAuth } from '../state';
 import { api } from '../api';
 import { Icon } from '../icons';
-import { Banner, CountdownBanner, toast } from '../ui';
-import { usePushRegister } from '../ui';
+import { Button, Switch } from '../components/ui';
+import { toast, usePushRegister, useNow, timeLeft } from '../ui';
+import { Bell } from 'lucide-react';
+
+function CountdownBanner({ expiresAt, prefix, suffix }) {
+  const now = useNow(30000);
+  const ms = Math.max(0, new Date(expiresAt).getTime() - now);
+  const tone = ms > 2 * 3600000 ? 'green' : ms > 0 ? 'amber' : 'red';
+  if (!ms) return null;
+  return (
+    <div className={`flex items-center justify-center gap-2 py-2 px-3.5 text-[13.5px] font-bold ${tone === 'green' ? 'bg-green-soft text-green' : tone === 'amber' ? 'bg-amber-soft text-[#8f5a08]' : 'bg-red-soft text-red'}`}>
+      <Icon name="Clock" size={16} />
+      <span>{prefix || 'Your shift request'} {timeLeft(ms)} {suffix}</span>
+    </div>
+  );
+}
 
 export default function AppShell() {
   const { user, setUser, logout } = useAuth();
@@ -75,62 +89,86 @@ export default function AppShell() {
 
   if (suspended) {
     return (
-      <div className="auth-wrap">
-        <div className="auth-panel">
-          <h1 className="auth-title">Account suspended</h1>
-          <p className="auth-sub">Your account is temporarily suspended. Contact support if you think this is a mistake.</p>
-          <ButtonGhost onClick={logout}>Log out</ButtonGhost>
+      <div className="min-h-screen flex flex-col items-center justify-center p-6 bg-background">
+        <div className="w-full max-w-[440px] bg-card border border-border rounded-3xl p-7 shadow-[0_8px_24px_rgba(46,53,51,0.07)]">
+          <h1 className="text-2xl font-black text-center tracking-tight">Account suspended</h1>
+          <p className="text-muted-foreground text-center mt-2 mb-5.5 text-[14.5px] leading-relaxed">
+            Your account is temporarily suspended. Contact support if you think this is a mistake.
+          </p>
+          <Button className="w-full" variant="ghost" onClick={logout}>Log out</Button>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="shell">
-      <header className="appbar">
-        <div className="appbar-inner">
-          <button className="logo" onClick={() => nav('/app')}>
-            <span className="logo-badge">ODC</span>
+    <div className="min-h-screen flex flex-col bg-background">
+      {/* Header */}
+      <header className="sticky top-0 z-40 bg-background py-2.5 px-4 border-b border-border">
+        <div className="max-w-[560px] mx-auto w-full flex items-center gap-2.5">
+          <button className="font-black text-lg tracking-tight inline-flex items-center gap-2 text-ink" onClick={() => nav('/app')}>
+            <span className="text-[10px] font-extrabold bg-primary text-white px-1.5 py-0.5 rounded-md tracking-widest">ODC</span>
             <span>On-Demand Crew</span>
           </button>
-          <span className="appbar-spacer" />
-          {isWorker ? (
-            <button className="freetoggle" onClick={toggleFree} title="Toggle availability">
-              <span style={{ color: user.available ? 'var(--green)' : 'var(--muted)' }}>{user.available ? 'Free now' : 'Not avail.'}</span>
-              <span className={`switch ${user.available ? 'on' : ''}`} />
+          <span className="flex-1" />
+          {isWorker && (
+            <button className="inline-flex items-center gap-1.5 text-[13px] font-bold" onClick={toggleFree} title="Toggle availability">
+              <span style={{ color: user.available ? 'var(--color-green)' : 'var(--color-muted-foreground)' }}>
+                {user.available ? 'Free now' : 'Not avail.'}
+              </span>
+              <Switch checked={user.available} />
             </button>
-          ) : null}
-          <button className="bell" onClick={() => nav('/app/notifications')} aria-label="Notifications">
-            <Icon name="Bell" size={26} />
-            {unread > 0 ? <span className="bell-dot">{unread > 9 ? '9+' : unread}</span> : null}
+          )}
+          <button className="relative inline-flex" onClick={() => nav('/app/notifications')} aria-label="Notifications">
+            <Bell size={26} className="text-ink-soft" />
+            {unread > 0 && (
+              <span className="absolute -top-0.5 -right-[3px] min-w-[17px] h-[17px] px-1 rounded-full bg-red text-white text-[10.5px] font-extrabold flex items-center justify-center">
+                {unread > 9 ? '9+' : unread}
+              </span>
+            )}
           </button>
         </div>
       </header>
 
-      {expiringShift ? (
+      {/* Expiring shift banner */}
+      {expiringShift && (
         <CountdownBanner
           expiresAt={expiringShift.expiresAt}
           prefix={user.role === 'manager' ? 'Your shift request expires in' : 'This request expires in'}
           suffix={isWorker ? '— respond before it vanishes.' : ''}
         />
-      ) : null}
+      )}
 
-      {!user.active ? (
-        <Banner tone="warn" style={{ borderRadius: 0 }}>Your number is not verified yet.</Banner>
-      ) : user.role !== 'manager' && !user.verifiedBadge ? (
-        <Banner tone="info" style={{ borderRadius: 0 }}>
-          Your profile is not verified yet. Managers feel safer accepting verified workers — upload your ID in Profile.
-        </Banner>
-      ) : null}
+      {/* Verification banners */}
+      {!user.active && (
+        <div className="flex items-start gap-2.5 rounded-none p-3 px-3.5 text-[14.5px] bg-amber-soft text-[#8f5a08]">
+          <span className="flex-1">Your number is not verified yet.</span>
+        </div>
+      )}
+      {user.active && user.role !== 'manager' && !user.verifiedBadge && (
+        <div className="flex items-start gap-2.5 rounded-none p-3 px-3.5 text-[14.5px] bg-blue-soft text-blue">
+          <span className="flex-1">Your profile is not verified yet. Managers feel safer accepting verified workers — upload your ID in Profile.</span>
+        </div>
+      )}
 
-      <main className="shell-main">
+      {/* Main content */}
+      <main className="flex-1 w-full max-w-[560px] mx-auto p-4 pb-24">
         <Outlet />
       </main>
 
-      <nav className="appnav">
-        <div className="appnav-inner">
+      {/* Bottom nav */}
+      <nav className="fixed bottom-0 left-0 right-0 z-45 bg-white/96 backdrop-blur-xl border-t border-border">
+        <div className="max-w-[560px] mx-auto flex">
           {navItems.map((n) => (
-            <NavLink key={n.to} to={n.to} className={({ isActive }) => `nav-item ${isActive ? 'on' : ''}`}>
+            <NavLink
+              key={n.to}
+              to={n.to}
+              className={({ isActive }) =>
+                `flex-1 py-2.5 px-1 flex flex-col items-center gap-0.5 text-[11.5px] font-bold transition-colors ${
+                  isActive ? 'text-accent-dark' : 'text-muted-foreground'
+                }`
+              }
+            >
               <Icon name={n.icon} size={22} />
               <span>{n.label}</span>
             </NavLink>
@@ -138,11 +176,5 @@ export default function AppShell() {
         </div>
       </nav>
     </div>
-  );
-}
-
-function ButtonGhost({ children, onClick }) {
-  return (
-    <button className="btn btn-ghost btn-md btn-full" onClick={onClick}>{children}</button>
   );
 }

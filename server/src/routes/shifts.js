@@ -24,10 +24,10 @@ function urgencyMs(shift) {
   return Math.max(0, new Date(shift.expires_at).getTime() - Date.now());
 }
 
-function serializeShift(s, viewer) {
-  const manager = db.prepare(`SELECT * FROM users WHERE id = ?`).get(s.manager_id);
-  const business = manager ? db.prepare(`SELECT * FROM manager_profiles WHERE user_id = ?`).get(manager.id) : null;
-  const worker = s.matched_worker_id ? db.prepare(`SELECT * FROM users WHERE id = ?`).get(s.matched_worker_id) : null;
+async function serializeShift(s, viewer) {
+  const manager = await db.get(`SELECT * FROM users WHERE id = $1`, s.manager_id);
+  const business = manager ? await db.get(`SELECT * FROM manager_profiles WHERE user_id = $1`, manager.id) : null;
+  const worker = s.matched_worker_id ? await db.get(`SELECT * FROM users WHERE id = $1`, s.matched_worker_id) : null;
   const remaining = urgencyMs(s);
   return {
     id: s.id,
@@ -64,9 +64,9 @@ function serializeShift(s, viewer) {
   };
 }
 
-function serializeResponse(r) {
-  const worker = db.prepare(`SELECT * FROM users WHERE id = ?`).get(r.worker_id);
-  const avg = db.prepare(`SELECT AVG(stars) avg, COUNT(*) n FROM ratings WHERE to_user = ?`).get(r.worker_id);
+async function serializeResponse(r) {
+  const worker = await db.get(`SELECT * FROM users WHERE id = $1`, r.worker_id);
+  const avg = await db.get(`SELECT AVG(stars)::float avg, COUNT(*)::int n FROM ratings WHERE to_user = $1`, r.worker_id);
   return {
     id: r.id,
     kind: r.kind,
@@ -103,23 +103,25 @@ router.post('/',
     const m = String(now.getMonth() + 1).padStart(2, '0');
     const d = String(now.getDate()).padStart(2, '0');
     if (date < `${y}-${m}-${d}`) throw apiError('The shift date has already passed.');
+    megaMinutes(date, startMin, endMin);
 
     const id = uid('shf');
     const createdAt = nowIso();
     const expiresAt = new Date(Date.now() + EXPIRY_MS).toISOString();
-    db.prepare(
+    await db.run(
       `INSERT INTO shifts (id, manager_id, role, specialty, date, start_min, end_min, location_name, lat, lng, pay_min, pay_max, notes, dress_code, status, created_at, expires_at)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,'open',?,?)`
-    ).run(id, req.user.id, role, specialty || null, date, startMin, endMin,
-          clean(locationName, 140), Number.isFinite(lat) ? lat : null, Number.isFinite(lng) ? lng : null,
-          payMinN, payMaxN, clean(notes, 600), clean(dressCode, 140), createdAt, expiresAt);
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,'open',$15,$16)`,
+      id, req.user.id, role, specialty || null, date, startMin, endMin,
+      clean(locationName, 140), Number.isFinite(lat) ? lat : null, Number.isFinite(lng) ? lng : null,
+      payMinN, payMaxN, clean(notes, 600), clean(dressCode, 140), createdAt, expiresAt
+    );
 
-    audit('shift_posted', `Shift ${id} posted for ${role}${specialty ? '/' + specialty : ''}`, req.user.id);
-    const shift = db.prepare(`SELECT * FROM shifts WHERE id = ?`).get(id);
-    notifyMatchingWorkers(shift);
-    notifyUser(req.user.id, 'Shift posted', 'We\u2019ll let you know when someone responds.', 'shift_posted', { shiftId: id });
+    await audit('shift_posted', `Shift ${id} posted for ${role}${specialty ? '/' + specialty : ''}`, req.user.id);
+    const shift = await db.get(`SELECT * FROM shifts WHERE id = $1`, id);
+    await notifyMatchingWorkers(shift);
+    await notifyUser(req.user.id, 'Shift posted', 'We\u2019ll let you know when someone responds.', 'shift_posted', { shiftId: id });
 
-    res.status(201).json({ shift: serializeShift(shift, req.user) });
+    res.status(201).json({ shift: await serializeShift(shift, req.user) });
   })
 );
 
@@ -127,20 +129,22 @@ router.get('/open',
   authGuard(publicRoles),
   asyncH(async (req, res) => {
     const u = req.user;
-    let rows = db.prepare(
-      `SELECT * FROM shifts WHERE status = 'open' AND role = ? AND expires_at > ? ORDER BY created_at DESC LIMIT 100`
-    ).all(u.role, new Date().toISOString());
+    let rows = await db.all(
+      `SELECT * FROM shifts WHERE status = 'open' AND role = $1 AND expires_at > $2 ORDER BY created_at DESC LIMIT 100`,
+      u.role, new Date().toISOString()
+    );
 
-    const specMap = u.role === 'chef' ? (() => {
-      const p = db.prepare(`SELECT specialties FROM chef_profiles WHERE user_id = ?`).get(u.id);
-      return new Set((p ? JSON.parse(p.specialties || '[]') : []).map((t) => String(t).toLowerCase()));
-    })() : null;
+    let specMap = null;
+    if (u.role === 'chef') {
+      const p = await db.get(`SELECT specialties FROM chef_profiles WHERE user_id = $1`, u.id);
+      specMap = new Set((p ? JSON.parse(p.specialties || '[]') : []).map((t) => String(t).toLowerCase()));
+    }
 
-    const owned = new Set(db.prepare(`SELECT shift_id FROM responses WHERE worker_id = ?`).all(u.id).map((r) => r.shift_id));
+    const owned = new Set((await db.all(`SELECT shift_id FROM responses WHERE worker_id = $1`, u.id)).map((r) => r.shift_id));
 
     rows = rows.filter((s) => {
       if (owned.has(s.id)) return false;
-      if (s.role === 'chef' && s.specialty && !specMap.has(String(s.specialty).toLowerCase())) return false;
+      if (s.role === 'chef' && s.specialty && specMap && !specMap.has(String(s.specialty).toLowerCase())) return false;
       const { lat, lng } = s;
       if (Number.isFinite(req.query.lat)) {
         const dLat = lat === null ? Infinity : Math.abs(lat - req.query.lat);
@@ -149,7 +153,7 @@ router.get('/open',
       }
       return true;
     });
-    res.json({ shifts: rows.map((s) => serializeShift(s, u)) });
+    res.json({ shifts: await Promise.all(rows.map((s) => serializeShift(s, u))) });
   })
 );
 
@@ -158,30 +162,31 @@ router.get('/my',
   asyncH(async (req, res) => {
     let shifts = [];
     if (req.user.role === 'manager') {
-      shifts = db.prepare(
-        `SELECT * FROM shifts WHERE manager_id = ? ORDER BY created_at DESC LIMIT 200`
-      ).all(req.user.id);
+      shifts = await db.all(
+        `SELECT * FROM shifts WHERE manager_id = $1 ORDER BY created_at DESC LIMIT 200`, req.user.id
+      );
     } else {
-      shifts = db.prepare(
-        `SELECT DISTINCT s.* FROM shifts s JOIN responses r ON r.shift_id = s.id WHERE r.worker_id = ? ORDER BY s.created_at DESC LIMIT 200`
-      ).all(req.user.id);
+      shifts = await db.all(
+        `SELECT DISTINCT s.* FROM shifts s JOIN responses r ON r.shift_id = s.id WHERE r.worker_id = $1 ORDER BY s.created_at DESC LIMIT 200`,
+        req.user.id
+      );
     }
-    const list = shifts.map((s) => ({ ...serializeShift(s, req.user), respCount: 0 }));
+    const list = (await Promise.all(shifts.map((s) => serializeShift(s, req.user)))).map((s, i) => ({ ...s, respCount: 0 }));
     if (req.user.role === 'manager') {
-      const cnt = db.prepare(`SELECT shift_id, COUNT(*) n FROM responses GROUP BY shift_id`).all();
+      const cnt = await db.all(`SELECT shift_id, COUNT(*)::int n FROM responses GROUP BY shift_id`);
       for (const c of cnt) {
         const item = list.find((l) => l.id === c.shift_id);
-        if (item) item.respCount = c.n;
+        if (item) item.respCount = Number(c.n);
       }
     }
     const responseMap = new Map();
     if (req.user.role !== 'manager') {
-      const rows = db.prepare(`SELECT * FROM responses WHERE worker_id = ? ORDER BY created_at DESC`).all(req.user.id);
-      for (const r of rows) responseMap.set(r.shift_id, serializeResponse(r));
+      const rows = await db.all(`SELECT * FROM responses WHERE worker_id = $1 ORDER BY created_at DESC`, req.user.id);
+      for (const r of rows) responseMap.set(r.shift_id, await serializeResponse(r));
     }
     res.json({
       shifts: list.map((s) => ({ ...s, myResponse: responseMap.get(s.id) || null })),
-      feeRate: currentFee(),
+      feeRate: await currentFee(),
     });
   })
 );
@@ -191,19 +196,19 @@ router.post('/:id/respond',
   asyncH(async (req, res) => {
     const { kind, amount } = req.body;
     if (!['accept', 'counter'].includes(kind)) throw apiError('Choose to accept or counter-offer.');
-    const shift = db.prepare(`SELECT * FROM shifts WHERE id = ?`).get(req.params.id);
+    const shift = await db.get(`SELECT * FROM shifts WHERE id = $1`, req.params.id);
     if (!shift) throw apiError('This shift no longer exists.');
     if (shift.status !== 'open') throw apiError('This shift is no longer accepting responses.');
     if (shift.manager_id === req.user.id) throw apiError('You cannot respond to your own shift.');
     if (shift.role !== req.user.role) throw apiError('This shift is not for your role.');
     if (shift.role === 'chef' && shift.specialty) {
-      const p = db.prepare(`SELECT specialties FROM chef_profiles WHERE user_id = ?`).get(req.user.id);
+      const p = await db.get(`SELECT specialties FROM chef_profiles WHERE user_id = $1`, req.user.id);
       const tags = p ? JSON.parse(p.specialties || '[]') : [];
       if (!tags.some((t) => String(t).toLowerCase() === String(shift.specialty).toLowerCase())) {
         throw apiError('This shift needs a different specialty than the ones on your profile.');
       }
     }
-    const already = db.prepare(`SELECT 1 FROM responses WHERE shift_id = ? AND worker_id = ?`).get(shift.id, req.user.id);
+    const already = await db.get(`SELECT 1 FROM responses WHERE shift_id = $1 AND worker_id = $2`, shift.id, req.user.id);
     if (already) throw apiError('You already responded to this shift.');
 
     let amountN = null;
@@ -215,58 +220,59 @@ router.post('/:id/respond',
       }
     }
     const id = uid('rsp');
-    db.prepare(
-      `INSERT INTO responses (id, shift_id, worker_id, kind, amount, status, created_at) VALUES (?,?,?,?,?,'pending',?)`
-    ).run(id, shift.id, req.user.id, kind, amountN, nowIso());
-    notifyUser(shift.manager_id,
+    await db.run(
+      `INSERT INTO responses (id, shift_id, worker_id, kind, amount, status, created_at) VALUES ($1,$2,$3,$4,$5,'pending',$6)`,
+      id, shift.id, req.user.id, kind, amountN, nowIso()
+    );
+    await notifyUser(shift.manager_id,
       `${req.user.name} responded`,
       kind === 'accept' ? `${capitalize(shift.role)} accepted. Pay: $${amountN}.` : `Counter-offer of $${amountN} on a ${shift.role} shift.`,
       'new_response', { shiftId: shift.id });
-    const fresh = db.prepare(`SELECT * FROM shifts WHERE id = ?`).get(shift.id);
-    res.status(201).json({ response: serializeResponse(db.prepare(`SELECT * FROM responses WHERE id = ?`).get(id)) });
+    res.status(201).json({ response: await serializeResponse(await db.get(`SELECT * FROM responses WHERE id = $1`, id)) });
   })
 );
 
 router.post('/:id/accept',
   authGuard(['manager']),
   asyncH(async (req, res) => {
-    const shift = db.prepare(`SELECT * FROM shifts WHERE id = ?`).get(req.params.id);
+    const shift = await db.get(`SELECT * FROM shifts WHERE id = $1`, req.params.id);
     if (!shift || shift.manager_id !== req.user.id) throw apiError('This shift does not exist for you.');
     if (shift.status !== 'open') throw apiError('This shift is already locked in or closed.');
-    const response = db.prepare(`SELECT * FROM responses WHERE id = ? AND shift_id = ? AND status = 'pending'`).get(req.body.responseId, shift.id);
+    const response = await db.get(`SELECT * FROM responses WHERE id = $1 AND shift_id = $2 AND status = 'pending'`, req.body.responseId, shift.id);
     if (!response) throw apiError('That response is no longer available.');
 
     const agreed = response.amount;
-    const feeRate = currentFee();
+    const feeRate = await currentFee();
     const feeAmount = Math.round(agreed * feeRate * 100) / 100;
     const workerPayout = Math.round((agreed - feeAmount) * 100) / 100;
 
-    db.prepare(`UPDATE shifts SET status = 'matched', matched_worker_id = ?, agreed_pay = ?, matched_at = ? WHERE id = ?`)
-      .run(response.worker_id, agreed, nowIso(), shift.id);
-    db.prepare(`UPDATE responses SET status = 'accepted' WHERE id = ?`).run(response.id);
-    db.prepare(`UPDATE responses SET status = 'declined' WHERE shift_id = ? AND id != ? AND status = 'pending'`).run(shift.id, response.id);
-    db.prepare(
-      `INSERT INTO fee_records (shift_id, agreed_pay, fee_rate, fee_amount, worker_payout, settled, created_at) VALUES (?,?,?,?,?,0,?)`
-    ).run(shift.id, agreed, feeRate, feeAmount, workerPayout, nowIso());
-    audit('shift_matched', `Shift ${shift.id} matched with pay $${agreed} (fee ${Math.round(feeRate*100)}% = $${feeAmount})`, req.user.id);
+    await db.run(`UPDATE shifts SET status = 'matched', matched_worker_id = $1, agreed_pay = $2, matched_at = $3 WHERE id = $4`,
+      response.worker_id, agreed, nowIso(), shift.id);
+    await db.run(`UPDATE responses SET status = 'accepted' WHERE id = $1`, response.id);
+    await db.run(`UPDATE responses SET status = 'declined' WHERE shift_id = $1 AND id != $2 AND status = 'pending'`, shift.id, response.id);
+    await db.run(
+      `INSERT INTO fee_records (shift_id, agreed_pay, fee_rate, fee_amount, worker_payout, settled, created_at) VALUES ($1,$2,$3,$4,$5,0,$6)`,
+      shift.id, agreed, feeRate, feeAmount, workerPayout, nowIso()
+    );
+    await audit('shift_matched', `Shift ${shift.id} matched with pay $${agreed} (fee ${Math.round(feeRate*100)}% = $${feeAmount})`, req.user.id);
 
-    const worker = db.prepare(`SELECT * FROM users WHERE id = ?`).get(response.worker_id);
-    notifyUser(response.worker_id,
+    const worker = await db.get(`SELECT * FROM users WHERE id = $1`, response.worker_id);
+    await notifyUser(response.worker_id,
       'You got the shift',
       `Locked in: $${agreed}. The manager has your contact. See details in My Work.`,
       'shift_confirmed', { shiftId: shift.id });
-    notifyUser(req.user.id, 'Shift confirmed',
+    await notifyUser(req.user.id, 'Shift confirmed',
       `${worker.name} is confirmed for $${agreed}. They can see your contact info now.`, 'shift_confirmed', { shiftId: shift.id });
 
-    const fresh = db.prepare(`SELECT * FROM shifts WHERE id = ?`).get(shift.id);
-    res.json({ shift: serializeShift(fresh, req.user), feeRate });
+    const fresh = await db.get(`SELECT * FROM shifts WHERE id = $1`, shift.id);
+    res.json({ shift: await serializeShift(fresh, req.user), feeRate });
   })
 );
 
 router.post('/:id/rate',
   authGuard(publicRoles),
   asyncH(async (req, res) => {
-    const shift = db.prepare(`SELECT * FROM shifts WHERE id = ?`).get(req.params.id);
+    const shift = await db.get(`SELECT * FROM shifts WHERE id = $1`, req.params.id);
     if (!shift || shift.status !== 'matched') throw apiError('You can only rate after the shift is confirmed.');
     const { stars, comment, toUserId } = req.body;
     const s = Number(stars);
@@ -278,11 +284,12 @@ router.post('/:id/rate',
     if (!((isManager && toUserId === shift.matched_worker_id) || (isWorker && toUserId === shift.manager_id))) {
       throw apiError('You can only rate the other person on this shift.');
     }
-    const existing = db.prepare(`SELECT id FROM ratings WHERE shift_id = ? AND from_user = ?`).get(shift.id, req.user.id);
+    const existing = await db.get(`SELECT id FROM ratings WHERE shift_id = $1 AND from_user = $2`, shift.id, req.user.id);
     if (existing) throw apiError('You already rated this shift.');
-    db.prepare(
-      `INSERT INTO ratings (id, shift_id, from_user, to_user, stars, comment, created_at) VALUES (?,?,?,?,?,?,?)`
-    ).run(uid('rat'), shift.id, req.user.id, toUserId, s, clean(comment, 300), nowIso());
+    await db.run(
+      `INSERT INTO ratings (id, shift_id, from_user, to_user, stars, comment, created_at) VALUES ($1,$2,$3,$4,$5,$6,$7)`,
+      uid('rat'), shift.id, req.user.id, toUserId, s, clean(comment, 300), nowIso()
+    );
     res.status(201).json({ ok: true });
   })
 );
@@ -290,31 +297,32 @@ router.post('/:id/rate',
 router.get('/:id',
   authGuard(publicRoles),
   asyncH(async (req, res) => {
-    const shift = db.prepare(`SELECT * FROM shifts WHERE id = ?`).get(req.params.id);
+    const shift = await db.get(`SELECT * FROM shifts WHERE id = $1`, req.params.id);
     if (!shift) throw apiError('This shift no longer exists.');
-    const responses = db.prepare(`SELECT * FROM responses WHERE shift_id = ? ORDER BY created_at DESC`).all(shift.id);
+    const responses = await db.all(`SELECT * FROM responses WHERE shift_id = $1 ORDER BY created_at DESC`, shift.id);
     const canSeeResponses = req.user.role === 'manager' && shift.manager_id === req.user.id;
     const details = (() => {
-      const base = { shift: serializeShift(shift, req.user) };
-      if (shift.status === 'matched') {
-        const fee = db.prepare(`SELECT * FROM fee_records WHERE shift_id = ?`).get(shift.id);
-        if (fee) Object.assign(base, { feeRecord: fee });
-      }
+      const base = { shift: null };
       return base;
     })();
-    const ratings = db.prepare(
-      `SELECT r.*, fu.name from_name FROM ratings r JOIN users fu ON fu.id = r.from_user WHERE r.shift_id = ?`
-    ).all(shift.id);
+    const feeRecord = shift.status === 'matched' ? await db.get(`SELECT * FROM fee_records WHERE shift_id = $1`, shift.id) : null;
+    const ratings = await db.all(
+      `SELECT r.*, fu.name from_name FROM ratings r JOIN users fu ON fu.id = r.from_user WHERE r.shift_id = $1`,
+      shift.id
+    );
+    const myResponse = req.user.role !== 'manager'
+      ? await (async () => {
+          const mine = await db.get(`SELECT * FROM responses WHERE shift_id = $1 AND worker_id = $2`, shift.id, req.user.id);
+          return mine ? await serializeResponse(mine) : null;
+        })()
+      : null;
+
     res.json({
-      ...details,
-      responses: canSeeResponses ? responses.map(serializeResponse) : [],
-      myResponse: req.user.role !== 'manager'
-        ? (() => {
-            const mine = db.prepare(`SELECT * FROM responses WHERE shift_id = ? AND worker_id = ?`).get(shift.id, req.user.id);
-            return mine ? serializeResponse(mine) : null;
-          })()
-        : null,
-      feerate: currentFee(),
+      shift: await serializeShift(shift, req.user),
+      feeRecord: feeRecord || undefined,
+      responses: canSeeResponses ? await Promise.all(responses.map(serializeResponse)) : [],
+      myResponse,
+      feerate: await currentFee(),
       ratings,
       ratedByMe: ratings.some((r) => r.from_user === req.user.id),
       managerRated: shift.status === 'matched' && ratings.some((r) => r.from_user === shift.manager_id),
