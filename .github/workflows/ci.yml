@@ -94,7 +94,7 @@ jobs:
         working-directory: client
         run: node ../scripts/check-i18n.mjs
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: client-dist
           path: client/dist
