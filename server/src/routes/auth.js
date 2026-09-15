@@ -141,6 +141,56 @@ router.post('/login', loginLimiter((req) => (req.body && (req.body.identifier ||
   res.json({ user: serializeUser(user), ...tokens });
 }));
 
+/* ---------------------------------------------------------------------------
+   Passwordless OTP login — the primary flow in the Stitch login design.
+
+   Deliberately mirrors /forgot-password: the response never reveals whether
+   the number is registered, so this endpoint cannot be used to enumerate
+   accounts. The shared loginLimiter caps request volume per phone.
+--------------------------------------------------------------------------- */
+router.post('/otp/request', loginLimiter((req) => (req.body && req.body.phone) || req.ip), asyncH(async (req, res) => {
+  const phone = cleanPhone(req.body.phone);
+  if (!phone) throw apiError('Enter a valid 10-digit mobile number.');
+
+  const user = await db.get(`SELECT * FROM users WHERE phone = $1`, phone);
+  let devCode = null;
+  if (user && user.active && !user.banned && !user.suspended) {
+    devCode = await generateOtp(phone, 'login', 300);
+    await audit('otp_login_requested', `Login OTP requested for ${phone}`, user.id);
+  }
+
+  // Same shape either way — an unregistered number must look identical.
+  res.json({
+    message: 'If this number is registered, a 6-digit code has been sent.',
+    ...(devCode ? { devCode } : {}),
+  });
+}));
+
+router.post('/otp/verify', loginLimiter((req) => (req.body && req.body.phone) || req.ip), asyncH(async (req, res) => {
+  const phone = cleanPhone(req.body.phone);
+  const code = String(req.body.code || '').trim();
+  const device = clean(req.body.device, 40) || 'web';
+  if (!phone || !/^\d{6}$/.test(code)) throw apiError('Enter the 6-digit code we sent you.');
+
+  const result = await verifyOtp(phone, 'login', code);
+  if (!result.ok) {
+    await audit('failed_otp_login', `OTP login failed for ${phone}`, null);
+    throw apiError(result.reason);
+  }
+
+  const user = await db.get(`SELECT * FROM users WHERE phone = $1`, phone);
+  if (!user) throw apiError('That code did not match.');
+  if (!user.active) throw apiError('This account is not active yet.');
+  if (user.banned) throw apiError('This account has been banned.');
+  if (user.suspended) throw apiError('This account is temporarily suspended.');
+  // An admin must not be able to sidestep 2FA by using the OTP path.
+  if (user.role === 'admin') throw apiError('Administrators must sign in from the admin portal.', 403);
+
+  const tokens = await issueTokens(user.id, user.role, device);
+  await audit('otp_login', `Signed in via OTP`, user.id);
+  res.json({ user: serializeUser(user), ...tokens });
+}));
+
 router.post('/refresh', asyncH(async (req, res) => {
   const refresh = String(req.body.refreshToken || '');
   if (!refresh) throw apiError('Missing refresh token.');

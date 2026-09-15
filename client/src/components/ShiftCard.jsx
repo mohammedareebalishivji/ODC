@@ -1,4 +1,4 @@
-import React from 'react';
+
 import { useNavigate } from 'react-router-dom';
 import { Icon, SpecialtyIcon, ChefIcon, WaiterIcon } from '../icons';
 import { Card, Pill, fmtMoney, fmtDate, clockFromMin, urgencyTone } from '../ui';

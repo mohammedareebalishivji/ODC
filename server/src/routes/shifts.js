@@ -1,10 +1,24 @@
 import { Router } from 'express';
+import crypto from 'node:crypto';
 import { db, getFeeRate, audit } from '../db.js';
 import { authGuard, asyncH } from '../middleware.js';
-import { uid, nowIso, apiError } from '../config.js';
+import { uid, nowIso, apiError, JWT_SECRET } from '../config.js';
 import { notifyUser, notifyMatchingWorkers } from '../notify.js';
+import { openHold } from '../escrow.js';
 
 const router = Router();
+
+/** Deterministic 4-digit arrival code shared by the venue and the worker. */
+function proximityCode(shiftId) {
+  const h = crypto.createHmac('sha256', JWT_SECRET).update(`proximity:${shiftId}`).digest();
+  return String(h.readUInt32BE(0) % 10000).padStart(4, '0');
+}
+
+/** Short human-quotable reference, e.g. ODC-8B42-CP. */
+function refCode(shiftId) {
+  const h = crypto.createHash('sha256').update(shiftId).digest('hex').toUpperCase();
+  return `ODC-${h.slice(0, 4)}-${h.slice(4, 6)}`;
+}
 
 const clean = (v, max = 500) => (typeof v === 'string' ? v.trim().slice(0, max) : '');
 const EXPIRY_MS = 12 * 60 * 60 * 1000;
@@ -59,6 +73,11 @@ async function serializeShift(s, viewer) {
     worker: worker ? { name: worker.name, role: worker.role, verified: !!worker.verified_badge, phone: s.status === 'matched' ? worker.phone : null } : null,
     agreedPay: s.agreed_pay,
     matchedAt: s.matched_at,
+    checkedInAt: s.checked_in_at,
+    completedAt: s.completed_at,
+    // Both parties see the same code so the venue can verify the arrival.
+    proximityCode: s.status === 'matched' ? proximityCode(s.id) : null,
+    referenceCode: refCode(s.id),
     viewerIsManager: viewer && viewer.id === s.manager_id,
     viewerIsWorker: viewer && s.matched_worker_id === viewer.id,
   };
@@ -119,7 +138,7 @@ router.post('/',
     await audit('shift_posted', `Shift ${id} posted for ${role}${specialty ? '/' + specialty : ''}`, req.user.id);
     const shift = await db.get(`SELECT * FROM shifts WHERE id = $1`, id);
     await notifyMatchingWorkers(shift);
-    await notifyUser(req.user.id, 'Shift posted', 'We\u2019ll let you know when someone responds.', 'shift_posted', { shiftId: id });
+    await notifyUser(req.user.id, 'notif.shiftPosted.title', 'notif.shiftPosted.body', 'shift_posted', { shiftId: id });
 
     res.status(201).json({ shift: await serializeShift(shift, req.user) });
   })
@@ -225,9 +244,9 @@ router.post('/:id/respond',
       id, shift.id, req.user.id, kind, amountN, nowIso()
     );
     await notifyUser(shift.manager_id,
-      `${req.user.name} responded`,
-      kind === 'accept' ? `${capitalize(shift.role)} accepted. Pay: $${amountN}.` : `Counter-offer of $${amountN} on a ${shift.role} shift.`,
-      'new_response', { shiftId: shift.id });
+      'notif.newResponse.title',
+      kind === 'accept' ? 'notif.newResponse.accepted' : 'notif.newResponse.countered',
+      'new_response', { shiftId: shift.id, name: req.user.name, amount: amountN, role: shift.role });
     res.status(201).json({ response: await serializeResponse(await db.get(`SELECT * FROM responses WHERE id = $1`, id)) });
   })
 );
@@ -254,15 +273,21 @@ router.post('/:id/accept',
       `INSERT INTO fee_records (shift_id, agreed_pay, fee_rate, fee_amount, worker_payout, settled, created_at) VALUES ($1,$2,$3,$4,$5,0,$6)`,
       shift.id, agreed, feeRate, feeAmount, workerPayout, nowIso()
     );
+    // Commit the venue's money to escrow the moment the match is locked in.
+    await openHold({
+      shiftId: shift.id,
+      managerId: shift.manager_id,
+      workerId: response.worker_id,
+      grossAmount: agreed,
+    });
     await audit('shift_matched', `Shift ${shift.id} matched with pay $${agreed} (fee ${Math.round(feeRate*100)}% = $${feeAmount})`, req.user.id);
 
     const worker = await db.get(`SELECT * FROM users WHERE id = $1`, response.worker_id);
     await notifyUser(response.worker_id,
-      'You got the shift',
-      `Locked in: $${agreed}. The manager has your contact. See details in My Work.`,
-      'shift_confirmed', { shiftId: shift.id });
-    await notifyUser(req.user.id, 'Shift confirmed',
-      `${worker.name} is confirmed for $${agreed}. They can see your contact info now.`, 'shift_confirmed', { shiftId: shift.id });
+      'notif.gotShift.title', 'notif.gotShift.body',
+      'shift_confirmed', { shiftId: shift.id, amount: agreed });
+    await notifyUser(req.user.id, 'notif.shiftConfirmed.title', 'notif.shiftConfirmed.body',
+      'shift_confirmed', { shiftId: shift.id, name: worker.name, amount: agreed });
 
     const fresh = await db.get(`SELECT * FROM shifts WHERE id = $1`, shift.id);
     res.json({ shift: await serializeShift(fresh, req.user), feeRate });
@@ -334,5 +359,52 @@ router.get('/:id',
 function capitalize(s) {
   return s ? s.charAt(0).toUpperCase() + s.slice(1) : s;
 }
+
+/**
+ * Worker confirms arrival by quoting the proximity code the venue can see.
+ * This is the check-in step in the confirmed-shift card.
+ */
+router.post('/:id/checkin',
+  authGuard(['chef', 'waiter']),
+  asyncH(async (req, res) => {
+    const shift = await db.get(`SELECT * FROM shifts WHERE id = $1`, req.params.id);
+    if (!shift) throw apiError('This shift no longer exists.');
+    if (shift.matched_worker_id !== req.user.id) throw apiError('This is not your shift.', 403);
+    if (shift.status !== 'matched') throw apiError('This shift is not confirmed.');
+    if (shift.checked_in_at) return res.json({ checkedInAt: shift.checked_in_at });
+
+    const code = String(req.body.code || '').trim();
+    if (code !== proximityCode(shift.id)) throw apiError('That arrival code did not match.');
+
+    const ts = nowIso();
+    await db.run(`UPDATE shifts SET checked_in_at = $1 WHERE id = $2`, ts, shift.id);
+    await notifyUser(shift.manager_id, 'notif.arrived.title', 'notif.arrived.body',
+      'checkin', { shiftId: shift.id, name: req.user.name, venue: shift.location_name });
+    await audit('shift_checkin', `Shift ${shift.id} check-in`, req.user.id);
+    res.json({ checkedInAt: ts });
+  })
+);
+
+/** Venue marks the service finished, which is what unlocks the payout step. */
+router.post('/:id/complete',
+  authGuard(['manager']),
+  asyncH(async (req, res) => {
+    const shift = await db.get(`SELECT * FROM shifts WHERE id = $1`, req.params.id);
+    if (!shift) throw apiError('This shift no longer exists.');
+    if (shift.manager_id !== req.user.id) throw apiError('This is not your shift.', 403);
+    if (shift.status !== 'matched') throw apiError('This shift is not confirmed.');
+    if (!shift.checked_in_at) throw apiError('The crew member has not checked in yet.');
+    if (shift.completed_at) return res.json({ completedAt: shift.completed_at });
+
+    const ts = nowIso();
+    await db.run(`UPDATE shifts SET completed_at = $1 WHERE id = $2`, ts, shift.id);
+    if (shift.matched_worker_id) {
+      await notifyUser(shift.matched_worker_id, 'notif.complete.title', 'notif.complete.body',
+        'complete', { shiftId: shift.id });
+    }
+    await audit('shift_complete', `Shift ${shift.id} marked complete`, req.user.id);
+    res.json({ completedAt: ts });
+  })
+);
 
 export default router;

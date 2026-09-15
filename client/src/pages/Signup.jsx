@@ -1,22 +1,23 @@
-import React from 'react';
+
 import { Link, useNavigate } from 'react-router-dom';
 import { ChefIcon, WaiterIcon, ManagerIcon } from '../icons';
+import { useI18n } from '../i18n';
 
 const ROLES = [
   {
     key: 'manager', Icon: ManagerIcon, iconColor: 'text-green', iconBg: 'bg-green-soft',
     title: 'I run a restaurant, bar or hotel',
-    sub: 'Post shifts when you are short staffed',
+    subKey: 'signup.managerSub',
   },
   {
     key: 'chef', Icon: ChefIcon, iconColor: 'text-amber', iconBg: 'bg-amber-soft',
     title: 'I am a chef',
-    sub: 'Cook shifts, set your specialties, pick your pay',
+    subKey: 'signup.chefSub',
   },
   {
     key: 'waiter', Icon: WaiterIcon, iconColor: 'text-blue', iconBg: 'bg-blue-soft',
     title: 'I am a waiter',
-    sub: 'Pick up serving shifts near you',
+    subKey: 'signup.waiterSub',
   },
 ];
 
@@ -32,12 +33,13 @@ function LogoTop() {
 }
 
 export default function Signup() {
+  const { t } = useI18n();
   const nav = useNavigate();
   return (
     <div className="min-h-screen flex flex-col items-center justify-center p-6 bg-background">
-      <div className="w-full max-w-[440px] bg-card border border-border rounded-3xl p-7 shadow-[0_8px_24px_rgba(46,53,51,0.07)]">
+      <div className="w-full max-w-[440px] bg-card border border-border rounded-3xl p-7 shadow-[0_8px_24px_rgb(26 28 26 / 0.07)]">
         <LogoTop />
-        <h1 className="text-2xl font-black text-center tracking-tight">What do you do?</h1>
+        <h1 className="text-2xl font-black text-center tracking-tight">{t('signup.whatDo')}</h1>
         <p className="text-muted-foreground text-center mt-2 mb-5.5 text-[14.5px] max-w-[320px] mx-auto leading-relaxed">
           Pick the account type that fits you. You can update profile details later.
         </p>
@@ -53,7 +55,7 @@ export default function Signup() {
               </span>
               <span>
                 <span className="font-extrabold text-[17px] block">{r.title}</span>
-                <span className="text-muted-foreground text-[13.5px] mt-0.5 block">{r.sub}</span>
+                <span className="text-muted-foreground text-[13.5px] mt-0.5 block">{t(r.subKey)}</span>
               </span>
             </button>
           ))}

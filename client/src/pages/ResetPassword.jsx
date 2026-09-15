@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../api';
 import { Button, Input } from '../components/ui';
@@ -6,6 +6,7 @@ import { toast } from '../ui';
 import { ChefIcon } from '../icons';
 import { AlertCircle } from 'lucide-react';
 import PasswordStrength from '../components/PasswordStrength';
+import { useI18n } from '../i18n';
 
 function LogoTop() {
   return (
@@ -31,6 +32,7 @@ function Field({ label, required, children }) {
 }
 
 export default function ResetPassword() {
+  const { t } = useI18n();
   const nav = useNavigate();
   const phone = sessionStorage.getItem('odc.resetPhone') || '';
   const [code, setCode] = useState('');
@@ -43,13 +45,13 @@ export default function ResetPassword() {
   const submit = async (e) => {
     e.preventDefault();
     setErr(null);
-    if (password !== confirm) { setErr('The two passwords do not match.'); return; }
-    if (code.length !== 6) { setErr('Enter the 6-digit code.'); return; }
+    if (password !== confirm) { setErr(t('toast.passwordsDiffer')); return; }
+    if (code.length !== 6) { setErr(t('toast.enterSixDigit')); return; }
     setBusy(true);
     try {
       await api('/api/auth/reset-password', { method: 'POST', body: JSON.stringify({ phone, code, newPassword: password }) });
       sessionStorage.removeItem('odc.resetPhone');
-      toast('Password updated. Log in with your new password.', 'green');
+      toast(t('toast.passwordUpdated'), 'green');
       nav('/login');
     } catch (ex) {
       setErr(ex.message);
@@ -60,9 +62,9 @@ export default function ResetPassword() {
 
   return (
     <div className="min-h-screen flex flex-col items-center justify-center p-6 bg-background">
-      <div className="w-full max-w-[440px] bg-card border border-border rounded-3xl p-7 shadow-[0_8px_24px_rgba(46,53,51,0.07)]">
+      <div className="w-full max-w-[440px] bg-card border border-border rounded-3xl p-7 shadow-[0_8px_24px_rgb(26 28 26 / 0.07)]">
         <LogoTop />
-        <h1 className="text-2xl font-black text-center tracking-tight">Set a new password</h1>
+        <h1 className="text-2xl font-black text-center tracking-tight">{t('reset.title')}</h1>
         <p className="text-muted-foreground text-center mt-2 mb-5.5 text-[14.5px] max-w-[320px] mx-auto leading-relaxed">
           Enter the code we sent and choose a new password.
         </p>
@@ -76,15 +78,15 @@ export default function ResetPassword() {
           <Field label="6-digit code" required>
             <Input value={code} inputMode="numeric" maxLength={6} onChange={(e) => setCode(e.target.value.replace(/\D/g, ''))} placeholder="123456" />
           </Field>
-          <Field label="New password" required>
-            <Input type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="New password" />
+          <Field label={t('reset.newPassword')} required>
+            <Input type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder={t('reset.newPassword')} />
             <PasswordStrength password={password} />
           </Field>
-          <Field label="Confirm new password" required>
-            <Input type="password" value={confirm} onChange={(e) => setConfirm(e.target.value)} placeholder="Type it again" />
+          <Field label={t('reset.confirm')} required>
+            <Input type="password" value={confirm} onChange={(e) => setConfirm(e.target.value)} placeholder={t('reset.typeAgain')} />
           </Field>
           <Button className="w-full" type="submit" disabled={busy}>
-            {busy ? 'Updating…' : 'Update password'}
+            {busy ? t('btn.updating') : t('btn.updatePassword')}
           </Button>
         </form>
       </div>

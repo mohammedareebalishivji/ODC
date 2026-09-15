@@ -69,6 +69,17 @@ export function AuthProvider({ children }) {
         persist({ accessToken: data.accessToken, refreshToken: data.refreshToken }, data.user);
         return { needs2fa: false, user: data.user };
       },
+      // Passwordless login. Must go through persist() so the provider's own
+      // token state is updated — writing localStorage directly leaves the
+      // in-memory store empty and the next request 401s into a forced logout.
+      async loginWithOtp(phone, code, device = 'web') {
+        const data = await api('/api/auth/otp/verify', {
+          method: 'POST',
+          body: JSON.stringify({ phone, code, device }),
+        });
+        persist({ accessToken: data.accessToken, refreshToken: data.refreshToken }, data.user);
+        return data.user;
+      },
       async finalizeSignup(phone, code) {
         const data = await api('/api/auth/verify', {
           method: 'POST',
@@ -152,7 +163,8 @@ export function AuthProvider({ children }) {
   const value = useMemo(
     () => ({
       user, tokens, booted, meta,
-      login: authFn.login, finalizeSignup: authFn.finalizeSignup, logout,
+      login: authFn.login, finalizeSignup: authFn.finalizeSignup,
+      loginWithOtp: authFn.loginWithOtp, logout,
       updateUser: (u) => { setUser(u); if (u) localStorage.setItem(USER_KEY, JSON.stringify(u)); },
       reload: apiUntyped.me,
       setUser,

@@ -1,11 +1,13 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useAuth } from '../state';
 import { api } from '../api';
-import { Card, Button, Input, Textarea } from '../components/ui';
-import { Icon, SpecialtyIcon, ChefIcon, WaiterIcon } from '../icons';
+import { Card, Button, Textarea } from '../components/ui';
+import { ChefIcon, WaiterIcon } from '../icons';
 import { fmtMoney, fmtDate, clockFromMin, timeLeft, useNow, toast } from '../ui';
-import { Shield, Clock, Check, Ban, Hand, Info, Star } from 'lucide-react';
+import { Clock, Check, Ban, Hand, Info, Star } from 'lucide-react';
+import ConfirmedShiftCard from '../components/ConfirmedShiftCard';
+import { useI18n } from '../i18n';
 
 function Pill({ tone = 'neutral', children }) {
   const toneMap = {
@@ -33,7 +35,7 @@ function RatingInput({ value, onChange, size = 34 }) {
     <div className="flex gap-1 justify-center">
       {[1, 2, 3, 4, 5].map((s) => (
         <button key={s} type="button" onClick={() => onChange(s)} aria-label={`${s} stars`}>
-          <Star size={size} className={s <= value ? 'text-[#f0a43a] fill-[#f0a43a]' : 'text-line'} />
+          <Star size={size} className={s <= value ? 'text-amber fill-amber' : 'text-line'} />
         </button>
       ))}
     </div>
@@ -59,6 +61,7 @@ function Stepper({ label, value, min = 0, max = 100000, step = 10, unit, onChang
 }
 
 export default function ShiftDetail() {
+  const { t } = useI18n();
   const { id } = useParams();
   const { user } = useAuth();
   const nav = useNavigate();
@@ -101,7 +104,7 @@ export default function ShiftDetail() {
         method: 'POST',
         body: JSON.stringify(kind === 'counter' ? { kind, amount } : { kind }),
       });
-      toast(kind === 'accept' ? 'You accepted. The manager will confirm.' : 'Counter-offer sent to the manager.', 'green');
+      toast(kind === 'accept' ? t('toast.youAccepted') : t('toast.counterSent'), 'green');
       setCounter(false);
       load();
     } catch (ex) {
@@ -115,7 +118,7 @@ export default function ShiftDetail() {
     setBusy(true);
     try {
       await api(`/api/shifts/${shift.id}/accept`, { method: 'POST', body: JSON.stringify({ responseId }) });
-      toast('Shift locked in. Both sides now have each other\u2019s contact.', 'green');
+      toast(t('toast.lockedInBoth'), 'green');
       load();
     } catch (ex) {
       toast(ex.message, 'red');
@@ -125,12 +128,12 @@ export default function ShiftDetail() {
   };
 
   const rate = async () => {
-    if (!stars) { toast('Pick a star rating first.', 'red'); return; }
+    if (!stars) { toast(t('toast.pickStars'), 'red'); return; }
     setBusy(true);
     try {
       const toUserId = isManager ? shift.worker.id : shift.manager.id;
       await api(`/api/shifts/${shift.id}/rate`, { method: 'POST', body: JSON.stringify({ stars, comment, toUserId }) });
-      toast('Thanks — your rating is saved.', 'green');
+      toast(t('toast.ratingSaved'), 'green');
       load();
     } catch (ex) {
       toast(ex.message, 'red');
@@ -139,13 +142,39 @@ export default function ShiftDetail() {
     }
   };
 
+  // A confirmed shift renders the coordination card instead of the open-state
+  // hero and response lists.
+  if (isMatched) {
+    return (
+      <>
+        <ConfirmedShiftCard shift={shift} feeRecord={feeRecord} onChange={load} />
+        <div className="card mt-4">
+          {ratedByMe ? (
+            <p className="text-xs text-muted-foreground">{t('sd.rated')}</p>
+          ) : (
+            <>
+              <p className="text-base font-extrabold mb-3 flex items-center gap-2 text-ink-soft">
+                {t('sd.rate')} {isManager ? shift.worker?.name : shift.manager?.name}
+              </p>
+              <RatingInput value={stars} onChange={setStars} />
+              <div className="h-3" />
+              <Textarea value={comment} onChange={(e) => setComment(e.target.value)} placeholder={t('sd.ratePlaceholder')} rows={2} />
+              <div className="h-2" />
+              <Button className="w-full" onClick={rate} disabled={busy || !stars} icon={<Star size={18} />}>{t('sd.submitRating')}</Button>
+            </>
+          )}
+        </div>
+      </>
+    );
+  }
+
   const RoleIcon = shift.role === 'chef' ? ChefIcon : WaiterIcon;
   const urgencyTone = shift.remainingMs > 2 * 3600000 ? 'green' : shift.remainingMs > 0 ? 'amber' : 'red';
 
   return (
     <>
       {/* Hero card */}
-      <div className={`rounded-[22px] p-5.5 text-white ${isMatched ? 'bg-gradient-to-br from-[#3a4240] to-[#232a27]' : 'bg-gradient-to-br from-[#5da582] to-[#3f7a63]'}`}>
+      <div className={`rounded-[22px] p-5.5 text-hero-on ${isMatched ? 'bg-gradient-to-br from-hero-from to-hero-to' : 'bg-gradient-to-br from-hero-from to-hero-to'}`}>
         <div className="flex items-start justify-between">
           <div className="flex items-center gap-2.5 font-extrabold text-xl">
             <RoleIcon size={26} />
@@ -157,10 +186,10 @@ export default function ShiftDetail() {
           ₹{fmtMoney(shift.payMin)}–{fmtMoney(shift.payMax)} <small className="text-sm font-semibold opacity-80">{shift.status === 'matched' && shift.agreedPay != null ? `· agreed ₹${fmtMoney(shift.agreedPay)}` : 'per shift'}</small>
         </div>
         <div className="grid grid-cols-[repeat(auto-fit,minmax(130px,1fr))] gap-2.5 mt-4.5">
-          <div className="bg-white/14 rounded-[13px] py-2.5 px-3"><b className="block text-sm">{fmtDate(shift.date)}</b><span className="text-xs opacity-85">Date</span></div>
-          <div className="bg-white/14 rounded-[13px] py-2.5 px-3"><b className="block text-sm">{clockFromMin(shift.startMin)}–{clockFromMin(shift.endMin)}</b><span className="text-xs opacity-85">Shift time</span></div>
-          <div className="bg-white/14 rounded-[13px] py-2.5 px-3"><b className="block text-sm">{shift.locationName}</b><span className="text-xs opacity-85">Where</span></div>
-          {shift.dressCode && <div className="bg-white/14 rounded-[13px] py-2.5 px-3"><b className="block text-sm">{shift.dressCode}</b><span className="text-xs opacity-85">Dress code</span></div>}
+          <div className="bg-card/15 rounded-[13px] py-2.5 px-3"><b className="block text-sm">{fmtDate(shift.date)}</b><span className="text-xs opacity-85">Date</span></div>
+          <div className="bg-card/15 rounded-[13px] py-2.5 px-3"><b className="block text-sm">{clockFromMin(shift.startMin)}–{clockFromMin(shift.endMin)}</b><span className="text-xs opacity-85">{t('sd.shiftTime')}</span></div>
+          <div className="bg-card/15 rounded-[13px] py-2.5 px-3"><b className="block text-sm">{shift.locationName}</b><span className="text-xs opacity-85">{t('sd.where')}</span></div>
+          {shift.dressCode && <div className="bg-card/15 rounded-[13px] py-2.5 px-3"><b className="block text-sm">{shift.dressCode}</b><span className="text-xs opacity-85">{t('sd.dressCode')}</span></div>}
         </div>
       </div>
 
@@ -171,7 +200,7 @@ export default function ShiftDetail() {
         <div className="mt-4">
           <p className="text-base font-extrabold mb-3 flex items-center gap-2 text-ink-soft">Responses ({responses.length})</p>
           {responses.length === 0 ? (
-            <Card className="text-center text-muted-foreground text-xs py-6">No responses yet. You can see live ones here as they come in.</Card>
+            <Card className="text-center text-muted-foreground text-xs py-6">{t('sd.noResponses')}</Card>
           ) : (
             <div className="flex flex-col gap-3">
               {responses.map((r) => (
@@ -181,7 +210,7 @@ export default function ShiftDetail() {
                     <div className="flex-1 min-w-0">
                       <div className="font-extrabold">{r.worker?.name}</div>
                       <div className="text-xs text-muted-foreground">
-                        {r.worker?.rating?.count ? `★ ${r.worker.rating.avg.toFixed(1)} (${r.worker.rating.count} ratings)` : 'New — no ratings yet'}
+                        {r.worker?.rating?.count ? `★ ${r.worker.rating.avg.toFixed(1)} (${r.worker.rating.count} ratings)` : t('sd.newNoRatings')}
                       </div>
                     </div>
                     <div className="text-[17px] font-extrabold">₹{fmtMoney(r.amount)}</div>
@@ -192,13 +221,13 @@ export default function ShiftDetail() {
                       {r.kind === 'accept' ? 'Accepted at range' : 'Counter-offer'}
                     </span>
                     <div className="h-2" />
-                    <Button className={`w-full ${r.kind === 'accept' ? 'bg-green text-white shadow-[0_6px_16px_rgba(76,156,116,0.26)]' : ''}`} onClick={() => acceptWorker(r.id)} disabled={busy} icon={<Check size={18} />}>
+                    <Button className={`w-full ${r.kind === 'accept' ? 'bg-green text-success-foreground shadow-[0_6px_16px_rgb(27 107 74 / 0.26)]' : ''}`} onClick={() => acceptWorker(r.id)} disabled={busy} icon={<Check size={18} />}>
                       Lock this in
                     </Button>
                   </div>
                 </Card>
               ))}
-              <FeeNote agreed={shift.payMax} feeRate={data.feerate} label="When you lock someone in" />
+              <FeeNote agreed={shift.payMax} feeRate={data.feerate} label={t('lbl.whenLockIn')} />
             </div>
           )}
         </div>
@@ -226,14 +255,14 @@ export default function ShiftDetail() {
               </Button>
             ) : (
               <Card>
-                <p className="text-base font-extrabold mb-3 flex items-center gap-2 text-ink-soft">Your counter-offer</p>
-                <Stepper label="My price" value={amount} min={Math.round(shift.payMin * 0.7)} max={Math.round(shift.payMax * 1.3)} step={10} unit="/shift" onChange={setAmount} />
+                <p className="text-base font-extrabold mb-3 flex items-center gap-2 text-ink-soft">{t('sd.yourCounter')}</p>
+                <Stepper label={t('lbl.myPrice')} value={amount} min={Math.round(shift.payMin * 0.7)} max={Math.round(shift.payMax * 1.3)} step={10} unit="/shift" onChange={setAmount} />
                 <div className="h-2" />
-                <p className="text-xs text-muted-foreground">Keep it close to the advertised range — offers far off are declined.</p>
+                <p className="text-xs text-muted-foreground">{t('sd.counterHint')}</p>
                 <div className="h-3" />
                 <div className="flex gap-2">
                   <Button variant="green" className="flex-1" onClick={() => respond('counter')} disabled={busy} icon={<Hand size={18} />}>Send ₹{fmtMoney(amount)}</Button>
-                  <Button variant="ghost" onClick={() => setCounter(false)}>Cancel</Button>
+                  <Button variant="ghost" onClick={() => setCounter(false)}>{t('common.cancel')}</Button>
                 </div>
               </Card>
             )}
@@ -253,59 +282,6 @@ export default function ShiftDetail() {
         </Card>
       )}
 
-      {/* Confirmation card when matched */}
-      {isMatched && (
-        <div className="border-[1.5px] border-dashed border-green bg-green-soft rounded-2xl p-4 mt-4">
-          <div className="flex items-center gap-3">
-            <Shield size={28} className="text-green" />
-            <div>
-              <div className="font-bold text-[15.5px] font-extrabold">Shift locked in</div>
-              <div className="text-xs text-muted-foreground">This shift is confirmed and your contact is shared with the other side.</div>
-            </div>
-          </div>
-
-          <div className="grid grid-cols-[repeat(auto-fit,minmax(130px,1fr))] gap-2.5 mt-3.5">
-            {isManager ? (
-              <div className="bg-green/12 rounded-xl py-2.5 px-3 leading-[1.55]">
-                <div className="text-xs text-muted-foreground">Your worker</div>
-                <b>{shift.worker?.name}</b>
-                <div className="text-xs font-bold">Call or WhatsApp: {shift.worker?.phone}</div>
-              </div>
-            ) : (
-              <div className="bg-green/12 rounded-xl py-2.5 px-3 leading-[1.55]">
-                <div className="text-xs text-muted-foreground">Your venue</div>
-                <b>{shift.manager?.business || shift.manager?.name}</b>
-                <div className="text-xs font-bold">{shift.manager?.address}</div>
-                <div className="text-xs font-bold">Call or WhatsApp: {shift.manager?.phone}</div>
-              </div>
-            )}
-          </div>
-
-          {feeRecord && (
-            <div className="bg-paper-2 rounded-[13px] p-3.5 text-[13.5px] text-ink-soft leading-[1.55] mt-3">
-              <b>Pay split</b> — shift agreed at <b>₹{fmtMoney(feeRecord.agreed_pay)}</b>.<br />
-              Manager pays <b>₹{fmtMoney(feeRecord.agreed_pay)}</b>. Worker receives <b>₹{fmtMoney(feeRecord.worker_payout)}</b>. O.D.C service fee: <b>₹{fmtMoney(feeRecord.fee_amount)}</b> ({Math.round(feeRecord.fee_rate * 100)}%).
-            </div>
-          )}
-
-          {/* Rating */}
-          <div className="mt-4">
-            {ratedByMe ? (
-              <p className="text-xs text-muted-foreground">You rated this shift. Thanks.</p>
-            ) : (
-              <>
-                <p className="text-base font-extrabold mb-3 flex items-center gap-2 text-ink-soft">Rate {isManager ? shift.worker?.name : shift.manager?.name}</p>
-                <RatingInput value={stars} onChange={setStars} />
-                <div className="h-3" />
-                <Textarea value={comment} onChange={(e) => setComment(e.target.value)} placeholder="How did it go? (optional)" rows={2} />
-                <div className="h-2" />
-                <Button className="w-full" onClick={rate} disabled={busy || !stars} icon={<Star size={18} />}>Submit rating</Button>
-              </>
-            )}
-          </div>
-        </div>
-      )}
-
       {/* Expired */}
       {shift.status === 'expired' && (
         <Card className="mt-4">
@@ -313,7 +289,7 @@ export default function ShiftDetail() {
           <p className="text-xs text-muted-foreground mt-2">It was open for 12 hours. {isManager ? 'You can post it again.' : 'New ones show up in Open Shifts.'}</p>
           <div className="h-3" />
           <Button variant="ghost" onClick={() => nav(isManager ? '/app/post' : '/app/browse')}>
-            {isManager ? 'Post another shift' : 'See open shifts'}
+            {isManager ? t('btn.postAnother') : t('btn.seeOpenShifts')}
           </Button>
         </Card>
       )}

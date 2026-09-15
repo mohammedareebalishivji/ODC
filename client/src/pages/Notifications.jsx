@@ -1,13 +1,15 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../api';
-import { Card, Button } from '../components/ui';
-import { Icon, EmptyBell } from '../icons';
+import { Button } from '../components/ui';
+import { EmptyBell } from '../icons';
 import { timeAgo } from '../ui';
+import { useI18n } from '../i18n';
 import { Bell, Clock, Zap } from 'lucide-react';
 
 export default function Notifications() {
   const nav = useNavigate();
+  const { t } = useI18n();
   const [items, setItems] = useState(null);
 
   const load = useCallback(async () => {
@@ -31,9 +33,9 @@ export default function Notifications() {
   return (
     <>
       <div className="py-1.5 px-0.5">
-        <p className="text-accent-dark font-extrabold text-[13px] uppercase tracking-widest">Updates</p>
-        <h1 className="text-[30px] font-black tracking-tight mt-1.5">Notifications</h1>
-        <p className="text-muted-foreground mt-2 text-[15px]">New shifts, responses, confirmations and expiry warnings.</p>
+        <p className="text-accent-dark font-extrabold text-[13px] uppercase tracking-widest">{t('notifs.eyebrow')}</p>
+        <h1 className="text-[30px] font-black tracking-tight mt-1.5">{t('nav.notifications')}</h1>
+        <p className="text-muted-foreground mt-2 text-[15px]">{t('notifs.sub')}</p>
       </div>
 
       <div className="mt-4">
@@ -42,12 +44,12 @@ export default function Notifications() {
             <div className="text-muted-2 flex justify-center mb-3.5">
               <EmptyBell />
             </div>
-            <h3 className="text-lg font-extrabold">Nothing yet</h3>
+            <h3 className="text-lg font-extrabold">{t('notifs.emptyTitle')}</h3>
             <p className="text-muted-foreground mt-2 text-[14.5px] max-w-[320px] mx-auto leading-relaxed">
-              When something needs your attention, it will show up here and ping your phone.
+              {t('notifs.emptyBody')}
             </p>
             <div className="mt-4.5 flex justify-center">
-              <Button variant="ghost" onClick={() => nav('/app')}>Back to home</Button>
+              <Button variant="ghost" onClick={() => nav('/app')}>{t('notifs.back')}</Button>
             </div>
           </div>
         ) : (
@@ -59,9 +61,9 @@ export default function Notifications() {
             >
               <span className="font-bold text-[14.5px] flex gap-1.5 items-center">
                 {n.type === 'announcement' ? <Zap size={16} /> : n.type === 'shift_expired' || n.type === 'expiring_soon' ? <Clock size={16} /> : <Bell size={16} />}
-                {n.title}
+                {t(n.title, n.data)}
               </span>
-              <div className="text-muted-foreground text-[13.5px] mt-0.5 leading-relaxed">{n.body}</div>
+              <div className="text-muted-foreground text-[13.5px] mt-0.5 leading-relaxed">{t(n.body, n.data)}</div>
               <div className="text-[11.5px] text-muted-foreground mt-1">{timeAgo(n.createdAt)}</div>
             </div>
           ))

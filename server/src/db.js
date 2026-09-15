@@ -1,11 +1,52 @@
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import pg from 'pg';
-import { DATABASE_URL } from './config.js';
+import { DATABASE_URL, DB_POOL_MAX } from './config.js';
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+
+/**
+ * TLS for hosted Postgres (Supabase).
+ *
+ * Supabase signs its certificates with its own "Supabase Root 2021 CA", so the
+ * system trust store rejects them. The fix is to pin that CA — NOT to set
+ * rejectUnauthorized:false, which would silently accept any certificate and
+ * give up protection against man-in-the-middle on the database connection.
+ *
+ * A local Postgres has no TLS, so SSL is skipped for loopback hosts.
+ */
+function sslConfig(connectionString) {
+  let host = '';
+  try {
+    host = new URL(connectionString).hostname;
+  } catch {
+    /* non-URL DSNs fall through to the local-host check below */
+  }
+  const isLocal = !host || host === 'localhost' || host === '127.0.0.1' || host === '::1';
+  if (isLocal || process.env.DATABASE_SSL === 'disable') return false;
+
+  const caPath = process.env.DATABASE_CA_PATH
+    || path.join(__dirname, '..', 'certs', 'supabase-ca.crt');
+  if (!fs.existsSync(caPath)) {
+    throw new Error(
+      `Refusing to connect to ${host} without a CA certificate. `
+      + `Expected one at ${caPath} — download it from the Supabase dashboard `
+      + `(Database Settings → SSL Configuration), or set DATABASE_CA_PATH.`
+    );
+  }
+  return { ca: fs.readFileSync(caPath, 'utf8'), rejectUnauthorized: true };
+}
 
 const pool = new pg.Pool({
   connectionString: DATABASE_URL,
-  max: 20,
+  ssl: sslConfig(DATABASE_URL),
+  // Supabase's shared transaction pooler allocates a modest number of server
+  // connections per project, so keep the client pool well under that.
+  max: DB_POOL_MAX,
   idleTimeoutMillis: 30000,
-  connectionTimeoutMillis: 5000,
+  // A hosted database is a network hop away; 5s is too tight for a cold start.
+  connectionTimeoutMillis: 15000,
 });
 
 pool.on('error', (err) => {
@@ -272,10 +313,156 @@ export async function initDatabase() {
       )
     `);
 
+    /* ------------------------------------------------------------------
+       Escrow ledger.
+
+       Money is modelled as an append-only ledger rather than a mutable
+       balance column: every movement is a row, and a wallet balance is the
+       sum of its entries. That makes the treasury console auditable and
+       means a bug can never silently "lose" a rupee.
+    ------------------------------------------------------------------ */
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS escrow_holds (
+        id          TEXT PRIMARY KEY,
+        shift_id    TEXT NOT NULL REFERENCES shifts(id) ON DELETE CASCADE,
+        manager_id  TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        worker_id   TEXT REFERENCES users(id) ON DELETE SET NULL,
+        gross_amount  REAL NOT NULL,
+        fee_amount    REAL NOT NULL,
+        worker_amount REAL NOT NULL,
+        status      TEXT NOT NULL DEFAULT 'held'
+                    CHECK (status IN ('held','released','refunded','disputed')),
+        created_at  TEXT NOT NULL,
+        released_at TEXT
+      )
+    `);
+
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS ledger_entries (
+        id         TEXT PRIMARY KEY,
+        user_id    TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        hold_id    TEXT REFERENCES escrow_holds(id) ON DELETE SET NULL,
+        shift_id   TEXT REFERENCES shifts(id) ON DELETE SET NULL,
+        kind       TEXT NOT NULL
+                   CHECK (kind IN ('earning','payout','fee','refund','adjustment')),
+        -- Positive credits the user, negative debits them.
+        amount     REAL NOT NULL,
+        note       TEXT,
+        created_at TEXT NOT NULL
+      )
+    `);
+
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS payout_methods (
+        id         TEXT PRIMARY KEY,
+        user_id    TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        kind       TEXT NOT NULL CHECK (kind IN ('upi','bank')),
+        upi_id     TEXT,
+        account_last4 TEXT,
+        ifsc       TEXT,
+        is_default INTEGER NOT NULL DEFAULT 0,
+        created_at TEXT NOT NULL
+      )
+    `);
+
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS payouts (
+        id         TEXT PRIMARY KEY,
+        user_id    TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        method_id  TEXT REFERENCES payout_methods(id) ON DELETE SET NULL,
+        amount     REAL NOT NULL,
+        status     TEXT NOT NULL DEFAULT 'pending'
+                   CHECK (status IN ('pending','processing','paid','failed')),
+        reference  TEXT,
+        created_at TEXT NOT NULL,
+        settled_at TEXT
+      )
+    `);
+
+    /* ---------------- ShiftConnect chat ---------------- */
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS conversations (
+        id         TEXT PRIMARY KEY,
+        shift_id   TEXT REFERENCES shifts(id) ON DELETE CASCADE,
+        topic      TEXT,
+        created_at TEXT NOT NULL
+      )
+    `);
+
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS conversation_members (
+        conversation_id TEXT NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
+        user_id         TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        last_read_at    TEXT,
+        PRIMARY KEY (conversation_id, user_id)
+      )
+    `);
+
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS messages (
+        id              TEXT PRIMARY KEY,
+        conversation_id TEXT NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
+        sender_id       TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        body            TEXT NOT NULL,
+        created_at      TEXT NOT NULL
+      )
+    `);
+
+    /* ---------------- Disputes ---------------- */
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS disputes (
+        id          TEXT PRIMARY KEY,
+        shift_id    TEXT NOT NULL REFERENCES shifts(id) ON DELETE CASCADE,
+        hold_id     TEXT REFERENCES escrow_holds(id) ON DELETE SET NULL,
+        raised_by   TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        against_id  TEXT REFERENCES users(id) ON DELETE SET NULL,
+        reason      TEXT NOT NULL,
+        detail      TEXT,
+        status      TEXT NOT NULL DEFAULT 'open'
+                    CHECK (status IN ('open','under_review','resolved')),
+        resolution  TEXT CHECK (resolution IN ('release_worker','refund_manager','split')),
+        resolved_by TEXT REFERENCES users(id) ON DELETE SET NULL,
+        resolution_note TEXT,
+        created_at  TEXT NOT NULL,
+        resolved_at TEXT
+      )
+    `);
+
+    /* ---------------- KYC documents ---------------- */
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS kyc_documents (
+        id          TEXT PRIMARY KEY,
+        user_id     TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        doc_type    TEXT NOT NULL
+                    CHECK (doc_type IN ('aadhaar','pan','fssai','digilocker','other')),
+        -- Never store a raw Aadhaar number; only the last 4 for display.
+        number_last4 TEXT,
+        file_data   TEXT,
+        status      TEXT NOT NULL DEFAULT 'pending'
+                    CHECK (status IN ('pending','verified','rejected')),
+        reviewed_by TEXT REFERENCES users(id) ON DELETE SET NULL,
+        review_note TEXT,
+        created_at  TEXT NOT NULL,
+        reviewed_at TEXT
+      )
+    `);
+
+    /* Shift lifecycle timestamps, added after the original schema shipped, so
+       they are applied to existing tables rather than in CREATE TABLE. */
+    await client.query(`ALTER TABLE shifts ADD COLUMN IF NOT EXISTS checked_in_at TEXT`);
+    await client.query(`ALTER TABLE shifts ADD COLUMN IF NOT EXISTS completed_at TEXT`);
+
     await client.query('CREATE INDEX IF NOT EXISTS idx_users_role ON users(role)');
     await client.query('CREATE INDEX IF NOT EXISTS idx_shifts_status_exp ON shifts(status, expires_at)');
     await client.query('CREATE INDEX IF NOT EXISTS idx_responses_shift ON responses(shift_id)');
     await client.query('CREATE INDEX IF NOT EXISTS idx_notifications_user ON notifications(user_id, read)');
+    await client.query('CREATE INDEX IF NOT EXISTS idx_ledger_user ON ledger_entries(user_id, created_at)');
+    await client.query('CREATE INDEX IF NOT EXISTS idx_holds_shift ON escrow_holds(shift_id)');
+    await client.query('CREATE INDEX IF NOT EXISTS idx_holds_status ON escrow_holds(status)');
+    await client.query('CREATE INDEX IF NOT EXISTS idx_messages_conv ON messages(conversation_id, created_at)');
+    await client.query('CREATE INDEX IF NOT EXISTS idx_conv_members_user ON conversation_members(user_id)');
+    await client.query('CREATE INDEX IF NOT EXISTS idx_disputes_status ON disputes(status)');
+    await client.query('CREATE INDEX IF NOT EXISTS idx_kyc_user ON kyc_documents(user_id, status)');
 
     await client.query('COMMIT');
     console.log('[db] PostgreSQL schema initialized.');

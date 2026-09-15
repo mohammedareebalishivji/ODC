@@ -1,9 +1,12 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Icon } from '../../icons';
-import { Button, Input, Textarea, Card } from '../../components/ui';
+
+import { Button, Input, Textarea } from '../../components/ui';
 import { toast } from '../../ui';
 import { Check, ArrowLeft, Shield, Home, User, Calendar, Coins, Zap, Eye, AlertCircle } from 'lucide-react';
+
+import DisputeDesk, { VerificationQueue } from './DisputeDesk';
+import Treasury from './Treasury';
 
 const API = '/tail/z7k9x2/admin';
 
@@ -110,24 +113,25 @@ export default function AdminHome() {
 
   const navItems = [
     ['overview', 'Home', Home], ['users', 'Accounts', User], ['shifts', 'Shifts', Calendar],
-    ['revenue', 'Earnings & Fee', Coins], ['announce', 'Announcements', Zap], ['logs', 'Audit log', Eye], ['profile', 'My account', Shield],
+    ['revenue', 'Revenue & Fee', Coins], ['treasury', 'Treasury', Shield], ['disputes', 'Disputes', AlertCircle], ['verify', 'Verification', Shield],
+    ['announce', 'Announcements', Zap], ['logs', 'Audit log', Eye], ['profile', 'My account', Shield],
   ];
 
   return (
     <div className="flex min-h-[100dvh] bg-background">
-      <aside className="w-[260px] shrink-0 bg-ink text-white flex flex-col border-r border-border overflow-y-auto">
+      <aside className="w-[260px] shrink-0 bg-rail text-rail-on flex flex-col border-r border-border overflow-y-auto">
         <div className="flex items-center gap-2 px-4 py-3.5 font-extrabold text-[14px]">
           <span className="inline-flex items-center justify-center min-w-[38px] h-[22px] px-1.5 text-[11.5px] font-black bg-accent text-ink rounded-[6px]">ODC</span>
           <span>Admin</span>
         </div>
-        <p className="text-white/40 font-bold text-[11.5px] tracking-widest uppercase px-4 mt-4 mb-1.5">Platform</p>
+        <p className="text-rail-on/45 font-bold text-[11.5px] tracking-widest uppercase px-4 mt-4 mb-1.5">Platform</p>
         {navItems.map(([k, label, IconComp]) => (
-          <button key={k} className={`flex items-center gap-2.5 w-full text-left px-4 py-2.5 text-[14.5px] font-bold transition-colors ${tab === k ? 'text-white bg-white/10 border-l-[3px] border-accent' : 'text-white/60 hover:text-white hover:bg-white/5 border-l-[3px] border-transparent'}`} onClick={() => tabGo(k)}>
+          <button key={k} className={`flex items-center gap-2.5 w-full text-left px-4 py-2.5 text-[14.5px] font-bold transition-colors ${tab === k ? 'text-rail-on bg-rail-on/10 border-l-[3px] border-accent' : 'text-rail-on/65 hover:text-rail-on hover:bg-rail-on/5 border-l-[3px] border-transparent'}`} onClick={() => tabGo(k)}>
             <IconComp size={18} /> {label}
           </button>
         ))}
-        <p className="text-white/40 font-bold text-[11.5px] tracking-widest uppercase px-4 mt-4 mb-1.5">Session</p>
-        <button className="flex items-center gap-2.5 w-full text-left px-4 py-2.5 text-[14.5px] font-bold text-white/60 hover:text-white hover:bg-white/5 border-l-[3px] border-transparent" onClick={logout}><ArrowLeft size={18} /> Sign out</button>
+        <p className="text-rail-on/45 font-bold text-[11.5px] tracking-widest uppercase px-4 mt-4 mb-1.5">Session</p>
+        <button className="flex items-center gap-2.5 w-full text-left px-4 py-2.5 text-[14.5px] font-bold text-rail-on/65 hover:text-rail-on hover:bg-rail-on/5 border-l-[3px] border-transparent" onClick={logout}><ArrowLeft size={18} /> Sign out</button>
       </aside>
 
       <main className="flex-1 p-6 overflow-y-auto min-h-[100dvh]">
@@ -139,7 +143,10 @@ export default function AdminHome() {
         {tab === 'overview' && <Overview stats={stats} />}
         {tab === 'users' && <Users users={users} roleFilter={roleFilter} setRoleFilter={setRoleFilter} onAction={userAction} />}
         {tab === 'shifts' && <Shifts shifts={shifts} />}
-        {tab === 'revenue' && <Revenue fees={fees} feeRate={feeRate} setFeeRate={setFeeRate} onSave={saveFee} />}
+        {tab === 'revenue' && <Revenue fees={fees} feeRate={feeRate} setFeeRate={setFeeRate} onSave={saveFee} token={token} />}
+        {tab === 'treasury' && <Treasury token={token} />}
+        {tab === 'disputes' && <DisputeDesk token={token} />}
+        {tab === 'verify' && <VerificationQueue token={token} />}
         {tab === 'announce' && (
           <div className="bg-card border-[1.5px] border-border rounded-[18px] p-5">
             <h2 className="text-[17px] font-black mb-4">Announcements</h2>
@@ -282,35 +289,107 @@ function Shifts({ shifts }) {
   );
 }
 
-function Revenue({ fees, feeRate, setFeeRate, onSave }) {
+function Revenue({ fees, feeRate, setFeeRate, onSave, token }) {
+  const [calc, setCalc] = useState(2000);
+  const [treasury, setTreasury] = useState(null);
+
+  useEffect(() => {
+    fetch('/tail/z7k9x2/admin/treasury', { headers: { Authorization: `Bearer ${token}` } })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => d && setTreasury(d.totals))
+      .catch(() => {});
+  }, [token]);
+
   if (!fees) return <Loading />;
+
+  const rate = feeRate / 100;
+  const calcFee = Math.round(calc * rate * 100) / 100;
+  const calcNet = Math.round((calc - calcFee) * 100) / 100;
+
+  const tiles = [
+    { label: 'Settled to crew', value: treasury?.released },
+    { label: 'Fees collected', value: treasury?.fees },
+    { label: 'Currently in escrow', value: treasury?.held },
+    { label: 'Frozen by dispute', value: treasury?.disputed },
+  ];
+
   return (
     <>
-      <h2 className="text-[17px] font-black mb-4">Earnings & platform fee</h2>
-      <div className="grid grid-cols-1 gap-3">
-        <div className="bg-card border-[1.5px] border-border rounded-[18px] p-5 text-center">
-          <div className="text-[28px] font-black text-accent-dark leading-tight">{Math.round(fees.feeRate * 100)}%</div>
-          <div className="text-xs text-muted-foreground font-bold mt-1.5">Current service fee</div>
+      <h1 className="text-2xl font-bold tracking-tight mb-1">Revenue &amp; fee configuration</h1>
+      <p className="text-muted-foreground text-[14.5px] mb-5">
+        The commission rate applies to every shift settled after it is saved.
+      </p>
+
+      <div className="tre-tiles">
+        {tiles.map((t) => (
+          <div key={t.label} className="tre-tile">
+            <p className="tre-tile-label">{t.label}</p>
+            <p className="tre-tile-value">
+              {t.value == null ? '—' : `\u20b9${Number(t.value).toLocaleString('en-IN')}`}
+            </p>
+          </div>
+        ))}
+      </div>
+
+      <div className="rev-grid">
+        <div className="bg-card border-[1.5px] border-border rounded-[18px] p-5">
+          <p className="text-[15px] font-extrabold mb-1">Global platform commission rate</p>
+          <p className="text-xs text-muted-foreground font-bold mb-3">
+            Taken from the worker side of each completed shift.
+          </p>
+          <div className="flex items-center gap-3">
+            <input
+              type="range" min={0} max={30} step={0.5} value={feeRate}
+              onChange={(e) => setFeeRate(Number(e.target.value))} className="flex-1"
+              aria-label="Platform commission rate"
+            />
+            <span className="font-black text-[22px] min-w-[70px] text-right">{feeRate}%</span>
+          </div>
+          <div className="h-2" />
+          <Button size="md" icon={<Check size={16} />} onClick={onSave}>Save fee</Button>
+          <p className="text-xs text-muted-foreground mt-3">
+            Currently live: <b>{Math.round(fees.feeRate * 100)}%</b>
+          </p>
+        </div>
+
+        {/* Transaction fee calculator from the design — shows the split a venue
+            and a crew member will each see at the proposed rate. */}
+        <div className="bg-card border-[1.5px] border-border rounded-[18px] p-5">
+          <p className="text-[15px] font-extrabold mb-3">Transaction fee calculator</p>
+          <label className="block">
+            <span className="block font-bold text-[13.5px] mb-1.5">Shift value</span>
+            <input
+              className="input"
+              type="number" min={0} step={50} value={calc}
+              onChange={(e) => setCalc(Number(e.target.value) || 0)}
+            />
+          </label>
+          <div className="rev-calc">
+            <div className="csc-row"><span>Venue pays</span><span>&#8377;{calc.toLocaleString('en-IN')}</span></div>
+            <div className="csc-row"><span>O.D.C fee at {feeRate}%</span><span className="csc-neg">&minus;&#8377;{calcFee.toLocaleString('en-IN')}</span></div>
+            <div className="csc-row csc-row-total"><span>Crew receives</span><span>&#8377;{calcNet.toLocaleString('en-IN')}</span></div>
+          </div>
         </div>
       </div>
-      <div className="bg-card border-[1.5px] border-border rounded-[18px] p-5 mt-4">
-        <p className="text-[15px] font-extrabold mb-1">Set the platform fee</p>
-        <p className="text-xs text-muted-foreground font-bold mb-3">This percentage is taken from the worker side of each completed shift.</p>
-        <div className="flex items-center gap-3">
-          <input type="range" min={0} max={30} step={0.5} value={feeRate} onChange={(e) => setFeeRate(Number(e.target.value))} className="flex-1" />
-          <span className="font-black text-[22px] min-w-[70px] text-right">{feeRate}%</span>
-        </div>
-        <div className="h-2" />
-        <Button size="md" onClick={onSave}><Check size={16} /> Save fee</Button>
-      </div>
+
       <div className="bg-card border-[1.5px] border-border rounded-[18px] p-5 mt-4">
         <p className="text-[15px] font-extrabold mb-3">Fee change history</p>
         <div className="overflow-x-auto">
           <table className="w-full text-[14.5px]">
-            <thead className="border-b border-border"><tr className="text-left text-xs font-bold text-muted-foreground uppercase tracking-wider"><th className="px-4 py-3">Rate</th><th className="px-4 py-3">Note</th><th className="px-4 py-3">By</th><th className="px-4 py-3">When</th></tr></thead>
+            <thead className="border-b border-border">
+              <tr className="text-left text-xs font-bold text-muted-foreground uppercase tracking-wider">
+                <th className="px-4 py-3">Rate</th><th className="px-4 py-3">Note</th>
+                <th className="px-4 py-3">By</th><th className="px-4 py-3">When</th>
+              </tr>
+            </thead>
             <tbody>
               {(fees.history || []).map((h) => (
-                <tr key={h.id} className="border-b border-border last:border-0"><td className="px-4 py-3">{Math.round(h.rate * 100)}%</td><td className="px-4 py-3">{h.label || '—'}</td><td className="px-4 py-3">{h.updated_by || 'system'}</td><td className="px-4 py-3 text-xs text-muted-foreground">{h.created_at.slice(0, 16).replace('T', ' ')}</td></tr>
+                <tr key={h.id} className="border-b border-border last:border-0">
+                  <td className="px-4 py-3">{Math.round(h.rate * 100)}%</td>
+                  <td className="px-4 py-3">{h.label || '\u2014'}</td>
+                  <td className="px-4 py-3">{h.updated_by || 'system'}</td>
+                  <td className="px-4 py-3 text-xs text-muted-foreground">{h.created_at.slice(0, 16).replace('T', ' ')}</td>
+                </tr>
               ))}
             </tbody>
           </table>
@@ -414,7 +493,7 @@ function ProfileTab({ API, token, onLogout }) {
             </div>
             <p className="text-xs text-muted-foreground">6-digit code</p>
             <div className="bg-paper-2 text-center py-3 rounded-xl font-black text-[22px] tracking-[8px] mt-1.5">{staticCode}</div>
-            {newCode && <div className="flex items-start gap-2.5 rounded-[14px] p-3 px-3.5 text-[14.5px] bg-amber-soft text-[#8f5a08] mt-3">Your new code is <b>{newCode}</b> — it takes effect next time you sign in.</div>}
+            {newCode && <div className="flex items-start gap-2.5 rounded-[14px] p-3 px-3.5 text-[14.5px] bg-amber-soft text-amber mt-3">Your new code is <b>{newCode}</b> — it takes effect next time you sign in.</div>}
             <Field label="Set your own 6-digit code (optional)"><Input value={customCode} inputMode="numeric" maxLength={6} onChange={(e) => setCustomCode(e.target.value.replace(/\D/g, ''))} placeholder="e.g. 123456" className="tracking-[4px]" /></Field>
             <Field label="Current password (to change the code)"><Input type="password" value={codePw} onChange={(e) => setCodePw(e.target.value)} autoComplete="current-password" /></Field>
             <div className="flex gap-2">
@@ -424,7 +503,7 @@ function ProfileTab({ API, token, onLogout }) {
             <p className="text-xs text-muted-foreground mt-3">Optional: an authenticator app can be set on top of it.</p>
             {rot.secret ? (
               <>
-                <div className="flex items-start gap-2.5 rounded-[14px] p-3 px-3.5 text-[14.5px] bg-amber-soft text-[#8f5a08] mt-3">Scan or enter the new key below — the old one no longer works.</div>
+                <div className="flex items-start gap-2.5 rounded-[14px] p-3 px-3.5 text-[14.5px] bg-amber-soft text-amber mt-3">Scan or enter the new key below — the old one no longer works.</div>
                 <p className="text-xs text-muted-foreground mt-3">Secret</p>
                 <div className="bg-paper-2 text-center py-3 rounded-xl font-mono text-sm mt-1.5 break-all">{rot.secret.secret}</div>
                 <p className="text-xs text-muted-foreground mt-3">otpauth URI</p>

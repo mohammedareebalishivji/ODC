@@ -1,52 +1,314 @@
 @import "tailwindcss";
 
-@theme {
-  --color-background: #f5f8f6;
-  --color-foreground: #2e3533;
-  --color-card: #ffffff;
-  --color-card-foreground: #2e3533;
-  --color-primary: #4a8a6f;
-  --color-primary-foreground: #ffffff;
-  --color-secondary: #e6f1eb;
-  --color-secondary-foreground: #39705a;
-  --color-muted: #e9efeb;
-  --color-muted-foreground: #86928d;
-  --color-accent: #e6f1eb;
-  --color-accent-foreground: #39705a;
-  --color-destructive: #cd6a66;
-  --color-destructive-foreground: #ffffff;
-  --color-border: #e0e8e3;
-  --color-input: #e0e8e3;
-  --color-ring: #4a8a6f;
-  --color-success: #4c9c74;
-  --color-success-foreground: #ffffff;
-  --color-warning: #cd9b4c;
-  --color-warning-foreground: #ffffff;
-  --color-info: #5580b8;
-  --color-info-foreground: #ffffff;
-  --color-ink: #2e3533;
-  --color-ink-soft: #56625e;
-  --color-paper: #f5f8f6;
-  --color-paper-2: #e9efeb;
-  --color-line: #e0e8e3;
-  --color-accent-dark: #39705a;
-  --color-green: #4c9c74;
-  --color-green-soft: #e4f2eb;
-  --color-amber: #cd9b4c;
-  --color-amber-soft: #f8efdd;
-  --color-red: #cd6a66;
-  --color-red-soft: #f9eae8;
-  --color-blue: #5580b8;
-  --color-blue-soft: #e9f0f8;
+/* ---------------------------------------------------------------------------
+   O.D.C design tokens — generated from the Stitch project
+   "On-Demand Crew Web App" (theme: primary #2c7a7b, Inter, ROUND_EIGHT).
 
-  --radius-sm: 0.5rem;
-  --radius-md: 0.75rem;
-  --radius-lg: 1rem;
-  --radius-xl: 1.25rem;
-  --radius-2xl: 1.5rem;
+   Light and dark are both first-class: every colour is defined on :root, and
+   the dark block only *redefines* the same names. Component CSS should never
+   reach for a raw hex — always a token.
+--------------------------------------------------------------------------- */
+
+@theme {
+  /* --- Material-3 roles, straight from the Stitch palette --------------- */
+  --color-m3-primary: #006162;
+  --color-m3-on-primary: #ffffff;
+  --color-m3-primary-container: #2c7a7b;
+  --color-m3-on-primary-container: #c1ffff;
+  --color-m3-secondary: #994621;
+  --color-m3-on-secondary: #ffffff;
+  --color-m3-secondary-container: #fe9569;
+  --color-m3-on-secondary-container: #762c07;
+  --color-m3-tertiary: #385a75;
+  --color-m3-on-tertiary: #ffffff;
+  --color-m3-tertiary-container: #51728f;
+  --color-m3-on-tertiary-container: #ebf4ff;
+  --color-m3-error: #ba1a1a;
+  --color-m3-on-error: #ffffff;
+  --color-m3-error-container: #ffdad6;
+  --color-m3-on-error-container: #93000a;
+  --color-m3-outline: #6f7979;
+  --color-m3-outline-variant: #bec9c8;
+  --color-m3-inverse-surface: #2f312f;
+  --color-m3-inverse-on-surface: #f2f1ee;
+
+  /* --- Semantic names used across the app ------------------------------- */
+  --color-background: #faf9f6;
+  --color-foreground: #1a1c1a;
+  --color-card: #ffffff;
+  --color-card-foreground: #1a1c1a;
+  --color-primary: #006162;
+  --color-primary-foreground: #ffffff;
+  --color-secondary: #e9efee;
+  --color-secondary-foreground: #00504f;
+  --color-muted: #efeeeb;
+  --color-muted-foreground: #3f4949;
+  --color-accent: #e0f2f1;
+  --color-accent-foreground: #00504f;
+  --color-accent-dark: #005e5f;
+  --color-destructive: #ba1a1a;
+  --color-destructive-foreground: #ffffff;
+  --color-border: #bec9c8;
+  --color-input: #bec9c8;
+  --color-ring: #2c7a7b;
+
+  /* Status colours — tuned against the #faf9f6 surface for AA contrast */
+  --color-success: #1b6b4a;
+  --color-success-foreground: #ffffff;
+  --color-warning: #8f5a08;
+  --color-warning-foreground: #ffffff;
+  --color-info: #385a75;
+  --color-info-foreground: #ffffff;
+
+  /* Surface ladder */
+  --color-ink: #1a1c1a;
+  --color-ink-soft: #3f4949;
+  --color-paper: #faf9f6;
+  --color-paper-2: #efeeeb;
+  --color-surface-low: #f4f3f1;
+  --color-surface-high: #e9e8e5;
+  --color-surface-highest: #e3e2e0;
+  --color-line: #bec9c8;
+  --color-line-soft: #dcdedb;
+
+  /* Accent pairs (solid + soft wash) for pills, banners, chips */
+  --color-green: #1b6b4a;
+  --color-green-soft: #d7f0e4;
+  --color-amber: #8f5a08;
+  --color-amber-soft: #fdefd8;
+  --color-red: #ba1a1a;
+  --color-red-soft: #ffdad6;
+  --color-blue: #385a75;
+  --color-blue-soft: #e2edf6;
+  --color-teal: #2c7a7b;
+  --color-teal-soft: #d3ecec;
+  --color-terracotta: #994621;
+  --color-terracotta-soft: #ffdbce;
+
+  /* --- Radii — Stitch ROUND_EIGHT --------------------------------------- */
+  --radius-sm: 0.25rem;
+  --radius-md: 0.5rem;
+  --radius-lg: 0.75rem;
+  --radius-xl: 1rem;
+  --radius-2xl: 1.25rem;
   --radius-full: 9999px;
 
-  --font-sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  /* --- Type scale, mirrored from the Stitch typography tokens ----------- */
+  --font-sans: Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto,
+    'Helvetica Neue', Arial, sans-serif;
+  --font-mono: 'Roboto Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+  /* Devanagari needs a fallback that actually ships the glyphs */
+  --font-deva: Inter, 'Noto Sans Devanagari', 'Nirmala UI', system-ui, sans-serif;
+
+  --text-display: 40px;
+  --text-display--line-height: 48px;
+  --text-display--letter-spacing: -0.02em;
+  --text-display--font-weight: 700;
+  --text-headline-lg: 32px;
+  --text-headline-lg--line-height: 40px;
+  --text-headline-lg--letter-spacing: -0.015em;
+  --text-headline-lg--font-weight: 600;
+  --text-headline-md: 24px;
+  --text-headline-md--line-height: 32px;
+  --text-headline-md--letter-spacing: -0.01em;
+  --text-headline-md--font-weight: 600;
+  --text-headline-sm: 20px;
+  --text-headline-sm--line-height: 28px;
+  --text-headline-sm--font-weight: 600;
+  --text-title-md: 18px;
+  --text-title-md--line-height: 26px;
+  --text-title-md--font-weight: 500;
+  --text-body-lg: 18px;
+  --text-body-lg--line-height: 28px;
+  --text-body-md: 16px;
+  --text-body-md--line-height: 24px;
+  --text-body-sm: 14px;
+  --text-body-sm--line-height: 20px;
+  --text-label-lg: 16px;
+  --text-label-lg--line-height: 24px;
+  --text-label-lg--font-weight: 600;
+  --text-label-md: 14px;
+  --text-label-md--line-height: 20px;
+  --text-label-md--letter-spacing: 0.01em;
+  --text-label-md--font-weight: 600;
+  --text-label-sm: 12px;
+  --text-label-sm--line-height: 16px;
+  --text-label-sm--letter-spacing: 0.02em;
+  --text-label-sm--font-weight: 600;
+  --text-mono-data: 15px;
+  --text-mono-data--line-height: 22px;
+  --text-mono-data--letter-spacing: -0.01em;
+  --text-mono-data--font-weight: 500;
+
+  /* Stitch spacingScale: 2 → 4px base unit */
+  --spacing: 0.25rem;
+
+  /* The payment hero is a deep teal card in BOTH themes — it must not invert
+     with the surface tokens, or it flips to light-on-light in dark mode. */
+  --color-hero-from: #2c7a7b;
+  --color-hero-to: #006162;
+  --color-hero-on: #ffffff;
+  --color-hero-cta: #fe9569;
+  --color-hero-cta-on: #4a1a03;
+
+  /* The admin rail is a fixed dark chrome in both themes — using the M3
+     inverse pair would flip it light in dark mode. */
+  --color-rail: #16201f;
+  --color-rail-on: #eef3f2;
+}
+
+/* --- Dark mode -------------------------------------------------------------
+   Redefines only the colour tokens. Applies on an explicit [data-theme="dark"]
+   and on system preference unless the user has explicitly chosen light.
+--------------------------------------------------------------------------- */
+:root[data-theme='dark'] {
+  --color-m3-primary: #4fdbc8;
+  --color-m3-on-primary: #003731;
+  --color-m3-primary-container: #14b8a6;
+  --color-m3-on-primary-container: #00423b;
+  --color-m3-secondary: #7bd0ff;
+  --color-m3-on-secondary: #00354a;
+  --color-m3-secondary-container: #00a6e0;
+  --color-m3-on-secondary-container: #002c3f;
+  --color-hero-from: #12605d;
+  --color-hero-to: #0a4744;
+  --color-hero-on: #c8fff8;
+  --color-hero-cta: #ffb95f;
+  --color-hero-cta-on: #3f2600;
+  --color-rail: #101826;
+  --color-rail-on: #dae2fd;
+  --color-m3-tertiary: #ffb95f;
+  --color-m3-error: #ffb4ab;
+  --color-m3-outline: #859490;
+  --color-m3-outline-variant: #3c4947;
+  --color-m3-inverse-surface: #dae2fd;
+  --color-m3-inverse-on-surface: #283044;
+
+  --color-background: #0b1326;
+  --color-foreground: #dae2fd;
+  --color-card: #171f33;
+  --color-card-foreground: #dae2fd;
+  --color-primary: #4fdbc8;
+  --color-primary-foreground: #003731;
+  --color-secondary: #222a3d;
+  --color-secondary-foreground: #9ff0e2;
+  --color-muted: #222a3d;
+  --color-muted-foreground: #bbcac6;
+  --color-accent: #143b3a;
+  --color-accent-foreground: #9ff0e2;
+  --color-accent-dark: #4fdbc8;
+  --color-destructive: #ffb4ab;
+  --color-destructive-foreground: #57000a;
+  --color-border: #3c4947;
+  --color-input: #3c4947;
+  --color-ring: #4fdbc8;
+
+  --color-success: #6ddba6;
+  --color-success-foreground: #00351f;
+  --color-warning: #ffb95f;
+  --color-warning-foreground: #3f2600;
+  --color-info: #7bd0ff;
+  --color-info-foreground: #00354a;
+
+  --color-ink: #dae2fd;
+  --color-ink-soft: #bbcac6;
+  --color-paper: #0b1326;
+  --color-paper-2: #171f33;
+  --color-surface-low: #131b2e;
+  --color-surface-high: #222a3d;
+  --color-surface-highest: #2d3449;
+  --color-line: #3c4947;
+  --color-line-soft: #2d3449;
+
+  --color-green: #6ddba6;
+  --color-green-soft: #10352a;
+  --color-amber: #ffb95f;
+  --color-amber-soft: #3a2a10;
+  --color-red: #ffb4ab;
+  --color-red-soft: #3f1512;
+  --color-blue: #7bd0ff;
+  --color-blue-soft: #12293a;
+  --color-teal: #4fdbc8;
+  --color-teal-soft: #143b3a;
+  --color-terracotta: #ffb59a;
+  --color-terracotta-soft: #3d1a0c;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) {
+    --color-m3-primary: #4fdbc8;
+    --color-m3-on-primary: #003731;
+    --color-m3-primary-container: #14b8a6;
+    --color-m3-on-primary-container: #00423b;
+    --color-m3-secondary: #7bd0ff;
+    --color-m3-on-secondary: #00354a;
+    --color-m3-secondary-container: #00a6e0;
+    --color-m3-on-secondary-container: #002c3f;
+    --color-hero-from: #12605d;
+    --color-hero-to: #0a4744;
+    --color-hero-on: #c8fff8;
+    --color-hero-cta: #ffb95f;
+    --color-hero-cta-on: #3f2600;
+    --color-rail: #101826;
+    --color-rail-on: #dae2fd;
+  --color-rail: #101826;
+  --color-rail-on: #dae2fd;
+    --color-m3-tertiary: #ffb95f;
+    --color-m3-error: #ffb4ab;
+    --color-m3-outline: #859490;
+    --color-m3-outline-variant: #3c4947;
+    --color-m3-inverse-surface: #dae2fd;
+    --color-m3-inverse-on-surface: #283044;
+
+    --color-background: #0b1326;
+    --color-foreground: #dae2fd;
+    --color-card: #171f33;
+    --color-card-foreground: #dae2fd;
+    --color-primary: #4fdbc8;
+    --color-primary-foreground: #003731;
+    --color-secondary: #222a3d;
+    --color-secondary-foreground: #9ff0e2;
+    --color-muted: #222a3d;
+    --color-muted-foreground: #bbcac6;
+    --color-accent: #143b3a;
+    --color-accent-foreground: #9ff0e2;
+    --color-accent-dark: #4fdbc8;
+    --color-destructive: #ffb4ab;
+    --color-destructive-foreground: #57000a;
+    --color-border: #3c4947;
+    --color-input: #3c4947;
+    --color-ring: #4fdbc8;
+
+    --color-success: #6ddba6;
+    --color-success-foreground: #00351f;
+    --color-warning: #ffb95f;
+    --color-warning-foreground: #3f2600;
+    --color-info: #7bd0ff;
+    --color-info-foreground: #00354a;
+
+    --color-ink: #dae2fd;
+    --color-ink-soft: #bbcac6;
+    --color-paper: #0b1326;
+    --color-paper-2: #171f33;
+    --color-surface-low: #131b2e;
+    --color-surface-high: #222a3d;
+    --color-surface-highest: #2d3449;
+    --color-line: #3c4947;
+    --color-line-soft: #2d3449;
+
+    --color-green: #6ddba6;
+    --color-green-soft: #10352a;
+    --color-amber: #ffb95f;
+    --color-amber-soft: #3a2a10;
+    --color-red: #ffb4ab;
+    --color-red-soft: #3f1512;
+    --color-blue: #7bd0ff;
+    --color-blue-soft: #12293a;
+    --color-teal: #4fdbc8;
+    --color-teal-soft: #143b3a;
+    --color-terracotta: #ffb59a;
+    --color-terracotta-soft: #3d1a0c;
+  }
 }
 
 @layer base {
@@ -60,12 +322,20 @@
     font-size: 16px;
     line-height: 1.45;
   }
+  /* Hindi copy renders in a stack that actually carries Devanagari glyphs */
+  :lang(hi) { font-family: var(--font-deva); }
   button { font-family: inherit; cursor: pointer; border: 0; background: none; color: inherit; }
   input, select, textarea { font-family: inherit; font-size: 16px; }
   a { color: var(--color-accent-dark); text-decoration: none; }
   h1, h2, h3, h4 { margin: 0; line-height: 1.22; }
   p { margin: 0; }
   #root { min-height: 100vh; }
+
+  /* Visible focus for keyboard users — the designs lean on this for a11y */
+  :focus-visible {
+    outline: 2px solid var(--color-ring);
+    outline-offset: 2px;
+  }
 }
 
 @keyframes toast-in {
@@ -78,15 +348,32 @@
   100% { background-position: 0 0; }
 }
 
+@keyframes pulse-live {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.35; }
+}
+
 @utility skeleton {
-  border-radius: 0.75rem;
-  background: linear-gradient(90deg, var(--color-paper-2) 25%, #f1f6f2 37%, var(--color-paper-2) 63%);
+  border-radius: var(--radius-lg);
+  background: linear-gradient(90deg, var(--color-paper-2) 25%, var(--color-surface-low) 37%, var(--color-paper-2) 63%);
   background-size: 400% 100%;
   animation: sk 1.3s infinite;
 }
 
 @utility toast-anim {
   animation: toast-in 0.2s ease;
+}
+
+@utility live-dot {
+  animation: pulse-live 1.6s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
 }
 
 @media (max-width: 720px) {

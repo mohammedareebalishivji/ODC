@@ -1,15 +1,22 @@
-import React, { useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { api } from '../api';
 import { Button, Input, Select } from '../components/ui';
 import { useAuth } from '../state';
 import { ChefIcon, SpecialtyList } from '../icons';
-import { toast } from '../ui';
+
 import { Check, AlertCircle } from 'lucide-react';
 import PasswordStrength from '../components/PasswordStrength';
+import { useI18n } from '../i18n';
 
 const LANGS = ['English', 'Hindi', 'Tamil', 'Telugu', 'Kannada', 'Malayalam', 'Gujarati', 'Bengali', 'Punjabi', 'Marathi'];
-const EXPERIENCE = ['Just starting', '1–3 years', '4–7 years', '8+ years'];
+// value = what we persist (stable across languages); labelKey = what we show.
+const EXPERIENCE = [
+  { value: 'Just starting', labelKey: 'exp.justStarting' },
+  { value: '1–3 years', labelKey: 'exp.1to3' },
+  { value: '4–7 years', labelKey: 'exp.4to7' },
+  { value: '8+ years', labelKey: 'exp.8plus' },
+];
 
 function LogoTop() {
   return (
@@ -75,6 +82,7 @@ function StepperYears({ value, onChange }) {
 }
 
 export default function SignupForm() {
+  const { t } = useI18n();
   const { role } = useParams();
   const nav = useNavigate();
   const { setUser } = useAuth();
@@ -95,7 +103,7 @@ export default function SignupForm() {
       <div className="min-h-screen flex flex-col items-center justify-center p-6 bg-background">
         <div className="flex items-start gap-2.5 rounded-[14px] p-3 px-3.5 text-[14.5px] bg-red-soft text-red">
           <AlertCircle className="w-4 h-4 mt-0.5 shrink-0" />
-          <span className="flex-1">We could not find that signup type. <a href="#/signup">Choose again</a></span>
+          <span className="flex-1">{t('sf.badType')} <a href="#/signup">{t('sf.chooseAgain')}</a></span>
         </div>
       </div>
     );
@@ -107,19 +115,19 @@ export default function SignupForm() {
     e.preventDefault();
     setErr(null);
     if (!terms) {
-      setErr('Please accept the terms and privacy policy to continue.');
+      setErr(t('val.acceptTerms'));
       return;
     }
     if (role === 'chef' && form.specialties.length === 0) {
-      setErr('Pick at least one specialty so managers can find you.');
+      setErr(t('val.pickSpecialty'));
       return;
     }
     if (role === 'waiter' && !form.experienceLevel) {
-      setErr('Tell us your experience level.');
+      setErr(t('val.experienceLevel'));
       return;
     }
     if (role === 'manager' && !form.businessName) {
-      setErr('Tell us your business name.');
+      setErr(t('val.businessName'));
       return;
     }
     setBusy(true);
@@ -137,7 +145,7 @@ export default function SignupForm() {
 
   return (
     <div className="min-h-screen flex flex-col items-center justify-center p-6 bg-background">
-      <div className="w-full max-w-[440px] bg-card border border-border rounded-3xl p-7 shadow-[0_8px_24px_rgba(46,53,51,0.07)]">
+      <div className="w-full max-w-[440px] bg-card border border-border rounded-3xl p-7 shadow-[0_8px_24px_rgb(26 28 26 / 0.07)]">
         <LogoTop />
         <h1 className="text-2xl font-black text-center tracking-tight">{role === 'manager' ? 'Your business' : 'About you'}</h1>
         <p className="text-muted-foreground text-center mt-2 mb-5.5 text-[14.5px] max-w-[320px] mx-auto leading-relaxed">A few details so we can match you well.</p>
@@ -149,70 +157,70 @@ export default function SignupForm() {
         )}
 
         <form onSubmit={submit} className="mt-2">
-          <Field label="Your full name" required>
-            <Input value={form.name} onChange={(e) => set('name', e.target.value)} placeholder="e.g. Priya Shah" />
+          <Field label={t('sf.fullName')} required>
+            <Input value={form.name} onChange={(e) => set('name', e.target.value)} placeholder={t('sf.namePlaceholder')} />
           </Field>
-          <Field label="Mobile number" required hint="We send a code to this number to keep accounts safe.">
+          <Field label={t('sf.mobile')} required hint={t('sf.mobileHint')}>
             <Input value={form.phone} inputMode="tel" autoComplete="tel" onChange={(e) => set('phone', e.target.value)} placeholder="+91 99999 99999" />
           </Field>
-          <Field label="Email" hint="Optional, but handy for receipts.">
+          <Field label={t('lbl.email')} hint={t('sf.emailHint')}>
             <Input type="email" value={form.email} onChange={(e) => set('email', e.target.value)} placeholder="you@example.com" />
           </Field>
-          <Field label="Password" required>
-            <Input type="password" value={form.password} onChange={(e) => set('password', e.target.value)} autoComplete="new-password" placeholder="Create a strong password" />
+          <Field label={t('lbl.password')} required>
+            <Input type="password" value={form.password} onChange={(e) => set('password', e.target.value)} autoComplete="new-password" placeholder={t('sf.passwordPlaceholder')} />
             <PasswordStrength password={form.password} />
           </Field>
 
           {role === 'manager' && (
             <>
-              <Field label="Business name" required>
-                <Input value={form.businessName} onChange={(e) => set('businessName', e.target.value)} placeholder="e.g. Tandoor House" />
+              <Field label={t('sf.businessName')} required>
+                <Input value={form.businessName} onChange={(e) => set('businessName', e.target.value)} placeholder={t('sf.businessPlaceholder')} />
               </Field>
-              <Field label="Kind of business" required>
+              <Field label={t('sf.businessKind')} required>
                 <Select value={form.businessType} onChange={(e) => set('businessType', e.target.value)}>
-                  <option value="restaurant">Restaurant</option>
-                  <option value="bar">Bar / Pub</option>
-                  <option value="hotel">Hotel</option>
+                  <option value="restaurant">{t('sf.restaurant')}</option>
+                  <option value="bar">{t('sf.bar')}</option>
+                  <option value="hotel">{t('sf.hotel')}</option>
                   <option value="cafe">Café</option>
-                  <option value="other">Other venue</option>
+                  <option value="other">{t('sf.otherVenue')}</option>
                 </Select>
               </Field>
-              <Field label="Business address" required>
-                <Input value={form.businessAddress} onChange={(e) => set('businessAddress', e.target.value)} placeholder="Area, city" />
+              <Field label={t('sf.businessAddress')} required>
+                <Input value={form.businessAddress} onChange={(e) => set('businessAddress', e.target.value)} placeholder={t('sf.areaCity')} />
               </Field>
-              <Field label="Business license (optional)">
-                <Input value={form.licenseFile} onChange={(e) => set('licenseFile', e.target.value)} placeholder="File name or link" />
+              <Field label={t('sf.license')}>
+                <Input value={form.licenseFile} onChange={(e) => set('licenseFile', e.target.value)} placeholder={t('sf.filePlaceholder')} />
               </Field>
             </>
           )}
 
           {role === 'chef' && (
             <>
-              <Field label="What can you cook?" required hint="Pick as many as you like. Managers search by these.">
+              <Field label={t('sf.whatCook')} required hint={t('sf.cookHint')}>
                 <TagPicker options={SpecialtyList} value={form.specialties} onChange={(v) => set('specialties', v)} max={8} />
               </Field>
-              <Field label="Years of cooking experience" required>
+              <Field label={t('sf.yearsExp')} required>
                 <StepperYears value={form.yearsExperience} onChange={(v) => set('yearsExperience', v)} />
               </Field>
-              <Field label="Food safety certificate (optional)">
-                <Input value={form.certFile} onChange={(e) => set('certFile', e.target.value)} placeholder="File name or link" />
+              <Field label={t('sf.foodCert')}>
+                <Input value={form.certFile} onChange={(e) => set('certFile', e.target.value)} placeholder={t('sf.filePlaceholder')} />
               </Field>
             </>
           )}
 
           {role === 'waiter' && (
             <>
-              <Field label="Experience" required>
+              <Field label={t('sf.experience')} required>
                 <Select value={form.experienceLevel} onChange={(e) => set('experienceLevel', e.target.value)}>
-                  <option value="">Choose…</option>
-                  {EXPERIENCE.map((x) => <option key={x} value={x}>{x}</option>)}
+                  <option value="">{t('sf.choose')}</option>
+                  {EXPERIENCE.map((x) => <option key={x.value} value={x.value}>{t(x.labelKey)}</option>)}
                 </Select>
               </Field>
-              <Field label="Languages you speak" required hint="Pick the ones you are comfortable serving in.">
+              <Field label={t('sf.languages')} required hint={t('sf.languagesHint')}>
                 <TagPicker options={LANGS.map((l) => ({ name: l }))} value={form.languages} onChange={(v) => set('languages', v)} max={6} />
               </Field>
-              <Field label="ID proof (optional)">
-                <Input value={form.idFile} onChange={(e) => set('idFile', e.target.value)} placeholder="File name or link" />
+              <Field label={t('lbl.idProof')}>
+                <Input value={form.idFile} onChange={(e) => set('idFile', e.target.value)} placeholder={t('sf.filePlaceholder')} />
               </Field>
             </>
           )}
@@ -220,12 +228,12 @@ export default function SignupForm() {
           <label className="flex mt-2 mb-4 items-start gap-2.5">
             <input type="checkbox" checked={terms} onChange={(e) => setTerms(e.target.checked)} className="w-5 h-5 mt-0.5 accent-primary" />
             <span className="text-xs">
-              I agree to the <a href="#" className="text-accent-dark font-semibold">Terms of Service</a> and <a href="#" className="text-accent-dark font-semibold">Privacy Policy</a>.
+              I agree to the <a href="#" className="text-accent-dark font-semibold">{t('sf.terms')}</a> and <a href="#" className="text-accent-dark font-semibold">{t('sf.privacy')}</a>.
             </span>
           </label>
 
           <Button className="w-full" type="submit" disabled={busy || !form.name || !form.phone || !form.password}>
-            {busy ? 'Creating your account…' : 'Continue'}
+            {busy ? t('btn.creatingAccount') : t('common.next')}
           </Button>
         </form>
       </div>

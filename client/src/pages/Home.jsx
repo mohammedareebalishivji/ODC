@@ -1,14 +1,16 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../state';
 import { api } from '../api';
 import ShiftCard from '../components/ShiftCard';
-import { Icon } from '../icons';
+
 import { Card } from '../components/ui';
-import { fmtMoney, timeLeft, useNow } from '../ui';
-import { Plus, Clock, Wallet, Compass } from 'lucide-react';
+import { timeLeft, useNow } from '../ui';
+import { Plus, Clock, Compass } from 'lucide-react';
+import { useI18n } from '../i18n';
 
 export default function Home() {
+  const { t } = useI18n();
   const { user } = useAuth();
   const nav = useNavigate();
   const [mine, setMine] = useState(null);
@@ -40,37 +42,37 @@ export default function Home() {
     return (
       <>
         <div className="py-1.5 px-0.5 mt-2">
-          <p className="text-accent-dark font-extrabold text-[13px] uppercase tracking-widest">Manager view</p>
+          <p className="text-accent-dark font-extrabold text-[13px] uppercase tracking-widest">{t('home.managerView')}</p>
           <h1 className="text-[30px] font-black tracking-tight mt-1.5">Hi {user.name.split(' ')[0]}</h1>
           <p className="text-muted-foreground mt-2 text-[15px]">
             {openShifts.length
               ? `You have ${openShifts.length} open shift${openShifts.length > 1 ? 's' : ''}. ${openShifts.reduce((a, s) => a + (s.respCount ?? 0), 0)} response${openShifts.reduce((a, s) => a + (s.respCount ?? 0), 0) === 1 ? '' : 's'} waiting on them.`
-              : matchedShifts.length ? 'Your next shift is locked in. Nice work.' : 'A shift is open for 12 hours, then it closes if nobody accepts.'}
+              : matchedShifts.length ? t('home.nextLocked') : 'A shift is open for 12 hours, then it closes if nobody accepts.'}
           </p>
         </div>
 
         <div className="mt-4">
           <button
-            className="w-full rounded-[22px] p-5.5 text-white flex items-center gap-4 shadow-[0_10px_26px_rgba(74,138,111,0.28)] cursor-pointer bg-gradient-to-br from-[#5da582] to-[#3f7a63] border-0 text-left"
+            className="w-full rounded-[22px] p-5.5 text-hero-on flex items-center gap-4 shadow-[0_10px_26px_rgb(0 97 98 / 0.28)] cursor-pointer bg-gradient-to-br from-hero-from to-hero-to border-0 text-left"
             onClick={() => nav('/app/post')}
           >
             <span className="flex items-center justify-center w-[58px] h-[58px] rounded-[16px] bg-white/18 shrink-0">
               <Plus size={30} />
             </span>
             <span>
-              <span className="text-lg font-extrabold block">Post a Shift</span>
-              <span className="text-[13.5px] opacity-85 mt-0.5 block">Find a chef or waiter for your next rush</span>
+              <span className="text-lg font-extrabold block">{t('home.postShift')}</span>
+              <span className="text-[13.5px] opacity-85 mt-0.5 block">{t('home.postShiftSub')}</span>
             </span>
           </button>
         </div>
 
         <div className="grid grid-cols-2 gap-2.5 mt-4">
-          <StatCard num={openShifts.length} label="Open shifts" tone="accent" />
-          <StatCard num={matchedShifts.length} label="Locked in" tone="green" />
+          <StatCard num={openShifts.length} label={t('home.openShifts')} tone="accent" />
+          <StatCard num={matchedShifts.length} label={t('lbl.lockedIn')} tone="green" />
         </div>
 
         <ShiftList
-          title="Your shifts"
+          title={t('home.yourShifts')}
           items={mine.shifts.slice(0, 5)}
           empty={
             <div className="text-center text-muted-foreground mt-3">
@@ -98,39 +100,39 @@ export default function Home() {
     <>
       <div className="py-1.5 px-0.5 mt-2">
         <p className="text-accent-dark font-extrabold text-[13px] uppercase tracking-widest">
-          {user.role === 'chef' ? 'Chef view' : 'Waiter view'}
+          {user.role === 'chef' ? t('home.chefView') : t('home.waiterView')}
         </p>
         <h1 className="text-[30px] font-black tracking-tight mt-1.5">Hi {user.name.split(' ')[0]}</h1>
         <p className="text-muted-foreground mt-2 text-[15px]">
           {user.available
-            ? 'You are Free now. We are watching for nearby shifts that fit you.'
-            : 'You are marked not available — flip the switch to start getting shift alerts.'}
+            ? t('home.freeNowBody')
+            : t('home.notAvailBody')}
         </p>
       </div>
 
       <div className="mt-4">
         <button
-          className="w-full rounded-[22px] p-5.5 text-white flex items-center gap-4 shadow-[0_10px_26px_rgba(74,138,111,0.28)] cursor-pointer bg-gradient-to-br from-[#3a4240] to-[#232a27] border-0 text-left"
+          className="w-full rounded-[22px] p-5.5 text-hero-on flex items-center gap-4 shadow-[0_10px_26px_rgb(0 97 98 / 0.28)] cursor-pointer bg-gradient-to-br from-hero-from to-hero-to border-0 text-left"
           onClick={() => nav('/app/browse')}
         >
           <span className="flex items-center justify-center w-[58px] h-[58px] rounded-[16px] bg-white/18 shrink-0">
             <Compass size={30} />
           </span>
           <span>
-            <span className="text-lg font-extrabold block">Find work near you</span>
-            <span className="text-[13.5px] opacity-85 mt-0.5 block">See open shifts you can respond to right now</span>
+            <span className="text-lg font-extrabold block">{t('home.findWork')}</span>
+            <span className="text-[13.5px] opacity-85 mt-0.5 block">{t('home.findWorkSub')}</span>
           </span>
         </button>
       </div>
 
       <div className="grid grid-cols-2 gap-2.5 mt-4">
-        <StatCard num={matchedShifts.length} label="Confirmed shifts" tone="green" />
-        <StatCard num={'₹' + Intl.NumberFormat('en-IN').format(earned)} label="Earned so far" tone="accent" />
+        <StatCard num={matchedShifts.length} label={t('home.confirmedShifts')} tone="green" />
+        <StatCard num={'₹' + Intl.NumberFormat('en-IN').format(earned)} label={t('home.earnedSoFar')} tone="accent" />
       </div>
 
       {pendingOffers.length > 0 && (
         <>
-          <p className="text-base font-extrabold mt-5.5 mx-0.5 mb-3 flex items-center gap-2 text-ink-soft">Waiting on the manager</p>
+          <p className="text-base font-extrabold mt-5.5 mx-0.5 mb-3 flex items-center gap-2 text-ink-soft">{t('home.waitingManager')}</p>
           <div className="flex flex-col gap-3">
             {pendingOffers.slice(0, 3).map((s) => (
               <ShiftCard key={s.id} shift={s} right={

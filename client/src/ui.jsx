@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Icon, ChefIcon, WaiterIcon, ManagerIcon, EmptyShifts, EmptyBell, SpecialtyIcon } from './icons';
 
 export { Icon } from './icons';

@@ -217,7 +217,30 @@ export async function insertShift({ managerId, role = 'chef', specialty = 'Tando
   return id;
 }
 
+/**
+ * Refuse to wipe anything that is not a local database.
+ *
+ * resetDb() deletes every row in every table. Since the server now reads a
+ * .env that may point at a hosted Postgres, a mis-ordered import or a stray
+ * DATABASE_URL could otherwise aim the whole suite at production and destroy
+ * it. This check is deliberately fail-closed.
+ */
+function assertLocalDatabase() {
+  const url = process.env.DATABASE_URL || '';
+  let host = '';
+  try { host = new URL(url).hostname; } catch { /* handled below */ }
+  const isLocal = host === 'localhost' || host === '127.0.0.1' || host === '::1';
+  if (!isLocal) {
+    throw new Error(
+      `REFUSING to reset a non-local database (host: ${host || 'unparseable'}). `
+      + 'The test suite deletes every row in every table and must only ever run '
+      + 'against a local Postgres. Check ODC_TEST_DB_URL / DATABASE_URL.'
+    );
+  }
+}
+
 export async function resetDb() {
+  assertLocalDatabase();
   const { db } = await dbModule();
   await db.run(`DELETE FROM ratings`);
   await db.run(`DELETE FROM notifications`);

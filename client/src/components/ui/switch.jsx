@@ -8,7 +8,7 @@ const Switch = React.forwardRef(({ className, ...props }, ref) => (
     {...props}
     ref={ref}
   >
-    <SwitchPrimitive.Thumb className={cn('pointer-events-none block h-5 w-5 rounded-full bg-white shadow-lg ring-0 transition-transform data-[state=checked]:translate-x-5 data-[state=unchecked]:translate-x-0')} />
+    <SwitchPrimitive.Thumb className={cn('pointer-events-none block h-5 w-5 rounded-full bg-card shadow-lg ring-0 transition-transform data-[state=checked]:translate-x-5 data-[state=unchecked]:translate-x-0')} />
   </SwitchPrimitive.Root>
 ));
 Switch.displayName = SwitchPrimitive.Root.displayName;

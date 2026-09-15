@@ -1,10 +1,11 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../state';
 import { api } from '../api';
-import { Card, Button } from '../components/ui';
-import { Icon } from '../icons';
-import { fmtMoney, fmtDate, clockFromMin, timeLeft } from '../ui';
+import { Card } from '../components/ui';
+
+import { fmtMoney, fmtDate, clockFromMin } from '../ui';
+import { useI18n } from '../i18n';
 
 function Pill({ tone = 'neutral', children }) {
   const toneMap = {
@@ -22,7 +23,7 @@ function Seg({ options, value, onChange }) {
   return (
     <div className="flex bg-paper-2 p-1 rounded-[14px]">
       {options.map((o) => (
-        <button key={o.value} className={`flex-1 py-2.5 px-2 rounded-[11px] font-bold text-[14.5px] transition-all ${value === o.value ? 'bg-card text-ink shadow-[0_2px_6px_rgba(36,31,28,0.08)]' : 'text-muted-foreground'}`} onClick={() => onChange(o.value)}>
+        <button key={o.value} className={`flex-1 py-2.5 px-2 rounded-[11px] font-bold text-[14.5px] transition-all ${value === o.value ? 'bg-card text-ink shadow-[0_2px_6px_rgb(26 28 26 / 0.08)]' : 'text-muted-foreground'}`} onClick={() => onChange(o.value)}>
           {o.label}
         </button>
       ))}
@@ -40,6 +41,7 @@ function EmptyState({ title, sub }) {
 }
 
 export default function History() {
+  const { t } = useI18n();
   const { user } = useAuth();
   const nav = useNavigate();
   const [mine, setMine] = useState(null);
@@ -79,18 +81,18 @@ export default function History() {
         {list.length === 0 ? (
           <Card>
             <EmptyState
-              title={tab === 'done' ? 'No confirmed shifts yet' : 'Nothing closed yet'}
-              sub={tab === 'done' ? 'Confirmed shifts and their payouts appear here.' : 'Shifts that closed without a match appear here.'}
+              title={tab === 'done' ? t('hist.noConfirmed') : t('hist.nothingClosed')}
+              sub={tab === 'done' ? t('hist.confirmedBody') : t('hist.closedBody')}
             />
           </Card>
         ) : (
           list.slice(0, 40).map((s) => (
-            <Card key={s.id} className="cursor-pointer transition-shadow hover:shadow-[0_8px_24px_rgba(46,53,51,0.07)] active:scale-[0.99]" onClick={() => nav(`/app/shifts/${s.id}`)}>
+            <Card key={s.id} className="cursor-pointer transition-shadow hover:shadow-[0_8px_24px_rgb(26 28 26 / 0.07)] active:scale-[0.99]" onClick={() => nav(`/app/shifts/${s.id}`)}>
               <div className="flex items-center gap-2.5">
                 <div className="flex-1 min-w-0 font-bold text-[15.5px]">
                   {s.specialty || (s.role === 'chef' ? 'Chef' : 'Waiter')} · {fmtDate(s.date)}
                 </div>
-                {s.status === 'matched' ? <Pill tone="green">₹{fmtMoney(s.agreedPay)}</Pill> : <Pill tone="neutral">Closed</Pill>}
+                {s.status === 'matched' ? <Pill tone="green">₹{fmtMoney(s.agreedPay)}</Pill> : <Pill tone="neutral">{t('common.closed')}</Pill>}
               </div>
               <div className="text-xs text-muted-foreground mt-2">
                 {s.locationName} · {clockFromMin(s.startMin)}–{clockFromMin(s.endMin)}

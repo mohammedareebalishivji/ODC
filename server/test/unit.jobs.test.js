@@ -36,7 +36,9 @@ test('expirePastShifts warns once for shifts expiring soon', async () => {
 
   const ntf = await db.get(`SELECT * FROM notifications WHERE user_id = $1 AND type = 'expiring_soon'`, managerId);
   assert.ok(ntf, 'manager should receive an expiring-soon notice');
-  assert.match(ntf.title, /Expiring soon/);
+  // Notifications now store i18n keys, not English text — the client renders
+  // them in the reader's language.
+  assert.equal(ntf.title, 'notif.expiringSoon.title');
 });
 
 test('expirePastShifts leaves healthy shifts alone', async () => {

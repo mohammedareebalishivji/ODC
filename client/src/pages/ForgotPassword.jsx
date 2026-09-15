@@ -1,10 +1,11 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../api';
 import { Button, Input } from '../components/ui';
-import { toast } from '../ui';
+
 import { ChefIcon } from '../icons';
 import { AlertCircle } from 'lucide-react';
+import { useI18n } from '../i18n';
 
 function LogoTop() {
   return (
@@ -30,6 +31,7 @@ function Field({ label, required, children }) {
 }
 
 export default function ForgotPassword() {
+  const { t } = useI18n();
   const nav = useNavigate();
   const [phone, setPhone] = useState('');
   const [sent, setSent] = useState(false);
@@ -54,13 +56,13 @@ export default function ForgotPassword() {
   if (sent) {
     return (
       <div className="min-h-screen flex flex-col items-center justify-center p-6 bg-background">
-        <div className="w-full max-w-[440px] bg-card border border-border rounded-3xl p-7 shadow-[0_8px_24px_rgba(46,53,51,0.07)]">
+        <div className="w-full max-w-[440px] bg-card border border-border rounded-3xl p-7 shadow-[0_8px_24px_rgb(26 28 26 / 0.07)]">
           <LogoTop />
-          <h1 className="text-2xl font-black text-center tracking-tight">Code sent</h1>
+          <h1 className="text-2xl font-black text-center tracking-tight">{t('forgot.codeSent')}</h1>
           <p className="text-muted-foreground text-center mt-2 mb-5.5 text-[14.5px] max-w-[320px] mx-auto leading-relaxed">
             If an account exists for {phone}, we have sent a 6-digit code to it. Enter the code and your new password next.
           </p>
-          <Button className="w-full" onClick={() => nav('/reset')}>Continue</Button>
+          <Button className="w-full" onClick={() => nav('/reset')}>{t('common.next')}</Button>
         </div>
       </div>
     );
@@ -68,9 +70,9 @@ export default function ForgotPassword() {
 
   return (
     <div className="min-h-screen flex flex-col items-center justify-center p-6 bg-background">
-      <div className="w-full max-w-[440px] bg-card border border-border rounded-3xl p-7 shadow-[0_8px_24px_rgba(46,53,51,0.07)]">
+      <div className="w-full max-w-[440px] bg-card border border-border rounded-3xl p-7 shadow-[0_8px_24px_rgb(26 28 26 / 0.07)]">
         <LogoTop />
-        <h1 className="text-2xl font-black text-center tracking-tight">Forgot password</h1>
+        <h1 className="text-2xl font-black text-center tracking-tight">{t('forgot.title')}</h1>
         <p className="text-muted-foreground text-center mt-2 mb-5.5 text-[14.5px] max-w-[320px] mx-auto leading-relaxed">
           Enter the phone number on your account. We will send a code to reset your password.
         </p>
@@ -81,11 +83,11 @@ export default function ForgotPassword() {
           </div>
         )}
         <form onSubmit={submit} className="mt-4">
-          <Field label="Mobile number" required>
+          <Field label={t('forgot.mobile')} required>
             <Input value={phone} inputMode="tel" onChange={(e) => setPhone(e.target.value)} placeholder="+91 99999 99999" />
           </Field>
           <Button className="w-full" type="submit" disabled={busy || !phone}>
-            {busy ? 'Sending code…' : 'Send code'}
+            {busy ? t('btn.sendingCode') : t('btn.sendCode')}
           </Button>
         </form>
       </div>

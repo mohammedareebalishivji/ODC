@@ -1,4 +1,4 @@
-import React from 'react';
+
 
 function Svg({ size = 24, children, viewBox = '0 0 24 24', className = '', alt = '' }) {
   return (

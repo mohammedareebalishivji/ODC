@@ -1,9 +1,10 @@
-import React, { useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../state';
-import { Button, Input, Label } from '../components/ui';
+import { Button, Input } from '../components/ui';
 import { ChefIcon, WaiterIcon, ManagerIcon } from '../icons';
 import { AlertCircle } from 'lucide-react';
+import { useI18n } from '../i18n';
 
 function LogoTop() {
   return (
@@ -17,6 +18,7 @@ function LogoTop() {
 }
 
 export default function Login() {
+  const { t } = useI18n();
   const { user, login } = useAuth();
   const nav = useNavigate();
   const [identifier, setIdentifier] = useState('');
@@ -73,13 +75,13 @@ export default function Login() {
 
   return (
     <div className="min-h-screen flex flex-col items-center justify-center p-6 bg-background">
-      <div className="w-full max-w-[440px] bg-card border border-border rounded-3xl p-7 shadow-[0_8px_24px_rgba(46,53,51,0.07)]">
+      <div className="w-full max-w-[440px] bg-card border border-border rounded-3xl p-7 shadow-[0_8px_24px_rgb(26 28 26 / 0.07)]">
         <LogoTop />
-        <h1 className="text-2xl font-black text-center tracking-tight">Log in</h1>
+        <h1 className="text-2xl font-black text-center tracking-tight">{t('login.title')}</h1>
         <p className="text-muted-foreground text-center mt-2 mb-5.5 text-[14.5px] max-w-[320px] mx-auto leading-relaxed">
           {step === 'code'
-            ? 'Now enter your sign-in code — your PIN or authenticator code.'
-            : 'Use your phone number or email.'}
+            ? t('login.enterCode')
+            : t('login.usePhoneEmail')}
         </p>
 
         {err && (
@@ -135,7 +137,7 @@ export default function Login() {
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               autoComplete="current-password"
-              placeholder="Your password"
+              placeholder={t('login.passwordPlaceholder')}
               disabled={step === 'code'}
             />
           </div>
@@ -154,7 +156,7 @@ export default function Login() {
             </div>
           )}
           <Button className="w-full" type="submit" disabled={busy || !identifier || !password || (step === 'code' && !code)}>
-            {busy ? 'Checking…' : step === 'code' ? 'Finish signing in' : 'Log in'}
+            {busy ? t('btn.checking') : step === 'code' ? t('btn.finishSignIn') : t('login.title')}
           </Button>
         </form>
 
@@ -167,7 +169,7 @@ export default function Login() {
         )}
 
         <div className="flex items-center justify-between mt-4">
-          <Link to="/forgot" className="text-xs text-accent-dark font-semibold">Forgot password?</Link>
+          <Link to="/forgot" className="text-xs text-accent-dark font-semibold">{t('auth.forgot')}</Link>
           <Link to="/" className="text-xs text-accent-dark font-semibold">← Back</Link>
         </div>
       </div>

@@ -92,6 +92,57 @@ const statsQuery = async () => {
   };
 };
 
+/**
+ * Treasury terminal. Totals are summed from the escrow ledger rather than
+ * cached, so the terminal always reconciles against escrow_holds.
+ */
+router.get('/treasury', ...requireAdmin(), asyncH(async (_req, res) => {
+  const agg = await db.all(
+    `SELECT status,
+            COUNT(*)::int              AS n,
+            COALESCE(SUM(worker_amount), 0) AS worker_total,
+            COALESCE(SUM(fee_amount), 0)    AS fee_total
+       FROM escrow_holds
+      GROUP BY status`
+  );
+
+  const by = Object.fromEntries(agg.map((r) => [r.status, r]));
+  const totals = {
+    held: Number(by.held?.worker_total ?? 0),
+    heldCount: by.held?.n ?? 0,
+    disputed: Number(by.disputed?.worker_total ?? 0),
+    disputedCount: by.disputed?.n ?? 0,
+    released: Number(by.released?.worker_total ?? 0),
+    releasedCount: by.released?.n ?? 0,
+    // Fees are only actually earned once the hold settles to the worker.
+    fees: Number(by.released?.fee_total ?? 0),
+    feesCount: by.released?.n ?? 0,
+  };
+
+  const rows = await db.all(
+    `SELECT h.*, s.location_name, w.name AS worker_name
+       FROM escrow_holds h
+       LEFT JOIN shifts s ON s.id = h.shift_id
+       LEFT JOIN users  w ON w.id = h.worker_id
+      ORDER BY h.created_at DESC
+      LIMIT 200`
+  );
+
+  res.json({
+    totals,
+    holds: rows.map((h) => ({
+      id: h.id,
+      venue: h.location_name,
+      worker: h.worker_name,
+      grossAmount: h.gross_amount,
+      feeAmount: h.fee_amount,
+      workerAmount: h.worker_amount,
+      status: h.status,
+      createdAt: h.created_at,
+    })),
+  });
+}));
+
 router.get('/stats', ...requireAdmin(), asyncH(async (_req, res) => {
   res.json({ stats: await statsQuery(), feeRate: await getFeeRate() });
 }));
@@ -203,7 +254,7 @@ router.patch('/users/:id', ...requireAdmin(), asyncH(async (req, res) => {
   };
   if (!actions[action]) throw apiError('Unknown action.');
   await actions[action]();
-  await notifyUser(u.id, 'Account update', `Your O.D.C account status changed: ${action}.`, 'account', null);
+  await notifyUser(u.id, 'notif.accountUpdate.title', 'notif.accountUpdate.body', 'account', { action });
   await audit('admin_user_action', `${action} on ${u.name} (${u.id})`, req.user.id);
   res.json({ ok: true });
 }));
@@ -274,7 +325,7 @@ router.post('/announcements', ...requireAdmin(), asyncH(async (req, res) => {
     ? await db.all(`SELECT id FROM users WHERE role != 'admin'`)
     : await db.all(`SELECT id FROM users WHERE role = $1`, target);
   for (const w of who) {
-    await notifyUser(w.id, 'Message from O.D.C', message, 'announcement', { announcementId: id });
+    await notifyUser(w.id, 'notif.announcement.title', message, 'announcement', { announcementId: id });
   }
   await audit('admin_announcement', `Broadcast to ${who.length} user(s)`, req.user.id);
   res.status(201).json({ ok: true, sentTo: who.length });

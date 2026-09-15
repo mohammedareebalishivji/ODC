@@ -1,11 +1,12 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useNavigate, Navigate } from 'react-router-dom';
 import { useAuth } from '../../state';
 import { api } from '../../api';
-import { Card, Button, Input, Textarea, Select } from '../../components/ui';
-import { Icon, SpecialtyList } from '../../icons';
-import { toast, fmtDate, useNow, timeLeft } from '../../ui';
-import { AlertCircle, Info, MapPin, Check, Clock } from 'lucide-react';
+import { Card, Button, Input, Textarea } from '../../components/ui';
+import { SpecialtyList } from '../../icons';
+import { toast, fmtDate } from '../../ui';
+import { AlertCircle, Info, MapPin, Check } from 'lucide-react';
+import { useI18n } from '../../i18n';
 
 function Pill({ tone = 'neutral', children }) {
   const toneMap = { green: 'bg-green-soft text-green', amber: 'bg-amber-soft text-amber', neutral: 'bg-paper-2 text-ink-soft', accent: 'bg-secondary text-accent-dark' };
@@ -27,7 +28,7 @@ function Seg({ options, value, onChange }) {
   return (
     <div className="flex bg-paper-2 p-1 rounded-[14px]">
       {options.map((o) => (
-        <button key={o.value} className={`flex-1 py-2.5 px-2 rounded-[11px] font-bold text-[14.5px] transition-all ${value === o.value ? 'bg-card text-ink shadow-[0_2px_6px_rgba(36,31,28,0.08)]' : 'text-muted-foreground'}`} onClick={() => onChange(o.value)}>
+        <button key={o.value} className={`flex-1 py-2.5 px-2 rounded-[11px] font-bold text-[14.5px] transition-all ${value === o.value ? 'bg-card text-ink shadow-[0_2px_6px_rgb(26 28 26 / 0.08)]' : 'text-muted-foreground'}`} onClick={() => onChange(o.value)}>
           {o.label}
         </button>
       ))}
@@ -56,15 +57,30 @@ function Stepper({ label, value, min = 0, max = 100000, step = 10, unit, onChang
 function TimePicker({ label, value, onChange }) {
   const hh = Math.floor(value / 60);
   const mm = value % 60;
+  // Each select needs its own accessible name — the visible heading is a span,
+  // so a screen reader would otherwise announce two unnamed combo boxes.
+  const hourLabel = `${label} — hour`;
+  const minuteLabel = `${label} — minute`;
+  const selectCls = 'flex-1 min-h-[50px] rounded-[13px] border-[1.5px] border-border bg-card px-4 py-3 text-ink appearance-none text-center';
   return (
-    <div>
+    <div role="group" aria-label={label}>
       <span className="block font-bold text-sm mb-1.5 text-ink-soft">{label}</span>
       <div className="flex items-center gap-1.5">
-        <select className="flex-1 min-h-[50px] rounded-[13px] border-[1.5px] border-border bg-card px-4 py-3 text-ink appearance-none text-center" value={hh} onChange={(e) => onChange(Number(e.target.value) * 60 + mm)}>
+        <select
+          className={selectCls}
+          aria-label={hourLabel}
+          value={hh}
+          onChange={(e) => onChange(Number(e.target.value) * 60 + mm)}
+        >
           {Array.from({ length: 24 }, (_, i) => <option key={i} value={i}>{String(i).padStart(2, '0')}</option>)}
         </select>
-        <span className="text-xl font-extrabold">:</span>
-        <select className="flex-1 min-h-[50px] rounded-[13px] border-[1.5px] border-border bg-card px-4 py-3 text-ink appearance-none text-center" value={mm} onChange={(e) => onChange(hh * 60 + Number(e.target.value))}>
+        <span className="text-xl font-extrabold" aria-hidden="true">:</span>
+        <select
+          className={selectCls}
+          aria-label={minuteLabel}
+          value={mm}
+          onChange={(e) => onChange(hh * 60 + Number(e.target.value))}
+        >
           {[0, 15, 30, 45].map((m) => <option key={m} value={m}>{String(m).padStart(2, '0')}</option>)}
         </select>
       </div>
@@ -108,9 +124,9 @@ const nextDays = () => {
 };
 
 export default function PostShift() {
+  const { t } = useI18n();
   const { user } = useAuth();
   const nav = useNavigate();
-  if (user.role !== 'manager') return <Navigate to="/app" replace />;
   const [role, setRole] = useState('chef');
   const [specialty, setSpecialty] = useState([]);
   const [date, setDate] = useState('');
@@ -128,24 +144,28 @@ export default function PostShift() {
 
   useEffect(() => { setDate(nextDays()[0]?.iso || ''); }, []);
 
+  // Guard runs after every hook — an early return above them changes the hook
+  // count between renders and throws "Rendered fewer hooks than expected".
+  if (user.role !== 'manager') return <Navigate to="/app" replace />;
+
   const getLoc = () => {
     setLocBusy(true);
-    if (!navigator.geolocation) { setLocBusy(false); setErr('Location is not available on this browser — you can still post without it.'); return; }
+    if (!navigator.geolocation) { setLocBusy(false); setErr(t('geo.unsupported')); return; }
     navigator.geolocation.getCurrentPosition(
-      (p) => { setLoc({ lat: p.coords.latitude, lng: p.coords.longitude }); setLocBusy(false); toast('Location added — nearby workers can find you.'); },
-      (e) => { setLocBusy(false); setErr('Could not get your location. You can still post — workers near us will see it.'); }
+      (p) => { setLoc({ lat: p.coords.latitude, lng: p.coords.longitude }); setLocBusy(false); toast(t('geo.added')); },
+      (e) => { setLocBusy(false); setErr(t('geo.failed')); }
     );
   };
 
   const submit = async () => {
     setErr(null);
-    if (role === 'chef' && !specialty.length) { setErr('Choose what kind of chef you need.'); return; }
-    if (!date) { setErr('Pick a date.'); return; }
+    if (role === 'chef' && !specialty.length) { setErr(t('val.chefKind')); return; }
+    if (!date) { setErr(t('val.pickDate')); return; }
     const pMin = Number(payMin);
     const pMax = Number(payMax);
-    if (!Number.isFinite(pMin) || pMin <= 0) { setErr('Enter a valid minimum pay amount.'); return; }
-    if (!Number.isFinite(pMax) || pMax < pMin) { setErr('High end pay must be greater than or equal to minimum pay.'); return; }
-    if (!locationName.trim()) { setErr('Tell us where the shift is.'); return; }
+    if (!Number.isFinite(pMin) || pMin <= 0) { setErr(t('val.minPay')); return; }
+    if (!Number.isFinite(pMax) || pMax < pMin) { setErr(t('val.maxPay')); return; }
+    if (!locationName.trim()) { setErr(t('val.whereShift')); return; }
     setBusy(true);
     try {
       const data = await api('/api/shifts', {
@@ -156,7 +176,7 @@ export default function PostShift() {
           notes: [dressCode ? `Dress code: ${dressCode}` : null, notes].filter(Boolean).join(' · ') || null,
         }),
       });
-      toast('Shift posted. It will close in 12 hours if no one accepts.', 'green');
+      toast(t('toast.shiftPosted12h'), 'green');
       nav(`/app/shifts/${data.shift.id}`);
     } catch (ex) {
       setErr(ex.message);
@@ -168,9 +188,9 @@ export default function PostShift() {
   return (
     <>
       <div className="py-1.5 px-0.5">
-        <p className="text-accent-dark font-extrabold text-[13px] uppercase tracking-widest">Post a shift</p>
-        <h1 className="text-[30px] font-black tracking-tight mt-1.5">Fill the gap</h1>
-        <p className="text-muted-foreground mt-2 text-[15px]">Set the details below. Workers nearby who match get notified.</p>
+        <p className="text-accent-dark font-extrabold text-[13px] uppercase tracking-widest">{t('post.title')}</p>
+        <h1 className="text-[30px] font-black tracking-tight mt-1.5">{t('post.eyebrow')}</h1>
+        <p className="text-muted-foreground mt-2 text-[15px]">{t('post.sub')}</p>
       </div>
 
       {err && (
@@ -180,15 +200,15 @@ export default function PostShift() {
       )}
 
       <Card className="mt-4">
-        <Field label="Who do you need?" required>
+        <Field label={t('post.whoNeed')} required>
           <Seg options={[{ value: 'chef', label: 'Chef' }, { value: 'waiter', label: 'Waiter' }]} value={role} onChange={setRole} />
         </Field>
         {role === 'chef' && (
-          <Field label="What kind of chef?" required hint="You can browse more specialties on your profile later.">
+          <Field label={t('post.whatChef')} required hint={t('post.chefHint')}>
             <TagPicker options={SpecialtyList} value={specialty} onChange={setSpecialty} max={1} multi={false} checkLabel="Add" />
           </Field>
         )}
-        <Field label="Date" required>
+        <Field label={t('lbl.date')} required>
           <div className="flex flex-wrap gap-2.5">
             {nextDays().map((d) => (
               <button type="button" key={d.iso} className={`inline-flex items-center gap-2 py-2.5 px-3.5 border-[1.5px] rounded-[14px] bg-card font-bold text-[14.5px] transition-all duration-100 ${date === d.iso ? 'border-primary bg-secondary text-accent-dark' : 'border-border text-ink-soft'}`} onClick={() => setDate(d.iso)}>
@@ -198,19 +218,19 @@ export default function PostShift() {
           </div>
         </Field>
         <div className="flex gap-3">
-          <div className="flex-1"><TimePicker label="Starts" value={startMin} onChange={setStartMin} /></div>
-          <div className="flex-1"><TimePicker label="Ends" value={endMin} onChange={setEndMin} /></div>
+          <div className="flex-1"><TimePicker label={t('lbl.starts')} value={startMin} onChange={setStartMin} /></div>
+          <div className="flex-1"><TimePicker label={t('lbl.ends')} value={endMin} onChange={setEndMin} /></div>
         </div>
       </Card>
 
       <Card className="mt-4">
-        <Field label="Pay per shift" required hint="Type an amount or use +/- buttons to set minimum and maximum pay.">
+        <Field label={t('post.pay')} required hint={t('post.payHint')}>
           <div className="flex flex-col gap-3">
-            <Stepper label="Low end (Minimum)" value={payMin} min={10} max={100000} step={50} unit="/shift" onChange={setPayMin} />
-            <Stepper label="High end (Maximum)" value={payMax} min={10} max={100000} step={50} unit="/shift" onChange={setPayMax} />
+            <Stepper label={t('post.payLow')} value={payMin} min={10} max={100000} step={50} unit="/shift" onChange={setPayMin} />
+            <Stepper label={t('post.payHigh')} value={payMax} min={10} max={100000} step={50} unit="/shift" onChange={setPayMax} />
           </div>
           <div className="flex mt-3 gap-1.5 flex-wrap items-center">
-            <span className="text-xs text-muted-foreground mr-1">Quick presets:</span>
+            <span className="text-xs text-muted-foreground mr-1">{t('post.presets')}</span>
             {[{ label: '₹300–₹500', min: 300, max: 500 }, { label: '₹500–₹800', min: 500, max: 800 }, { label: '₹1,000–₹1,500', min: 1000, max: 1500 }, { label: '₹2,000–₹3,000', min: 2000, max: 3000 }].map((p) => (
               <button key={p.label} type="button" className="py-1 px-2.5 rounded-xl border border-border text-xs font-bold text-ink-soft bg-card hover:bg-paper-2 h-auto min-h-[28px]" onClick={() => { setPayMin(p.min); setPayMax(p.max); }}>{p.label}</button>
             ))}
@@ -219,29 +239,29 @@ export default function PostShift() {
       </Card>
 
       <Card className="mt-4">
-        <Field label="Where is the shift?" required>
-          <Input value={locationName} onChange={(e) => setLocationName(e.target.value)} placeholder="Venue name, area, city" />
+        <Field label={t('post.where')} required>
+          <Input value={locationName} onChange={(e) => setLocationName(e.target.value)} placeholder={t('post.wherePlaceholder')} />
         </Field>
         <Button variant="ghost" size="md" icon={<MapPin size={18} />} onClick={getLoc} disabled={locBusy} className="mb-2">
-          {loc ? 'Location added — tap to re-pin' : locBusy ? 'Finding you…' : 'Add my current location'}
+          {loc ? t('geo.repin') : locBusy ? t('geo.finding') : t('geo.addCurrent')}
         </Button>
         {loc && <p className="text-xs text-muted-foreground">Using coordinates {loc.lat.toFixed(4)}, {loc.lng.toFixed(4)}</p>}
       </Card>
 
       <Card className="mt-4">
-        <Field label="Anything else the worker should know?" hint="Dress code, station, what the shift involves.">
-          <Input value={dressCode} onChange={(e) => setDressCode(e.target.value)} placeholder="Dress code (e.g. black chef coat)" />
+        <Field label={t('post.notesLabel')} hint={t('post.notesHint')}>
+          <Input value={dressCode} onChange={(e) => setDressCode(e.target.value)} placeholder={t('post.dressPlaceholder')} />
           <div className="h-2" />
-          <Textarea value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Extra notes (optional)" rows={3} />
+          <Textarea value={notes} onChange={(e) => setNotes(e.target.value)} placeholder={t('post.extraPlaceholder')} rows={3} />
         </Field>
       </Card>
 
       <div className="h-4" />
       <div className="flex items-start gap-2.5 rounded-[14px] p-3 px-3.5 text-[14.5px] bg-blue-soft text-blue mb-4">
-        <Info size={16} className="mt-0.5 shrink-0" /><span className="flex-1">This request will disappear in 12 hours if no one accepts.</span>
+        <Info size={16} className="mt-0.5 shrink-0" /><span className="flex-1">{t('post.expiryNote')}</span>
       </div>
       <Button className="w-full" size="lg" icon={<Check size={20} />} onClick={submit} disabled={busy}>
-        {busy ? 'Posting…' : 'Post this shift'}
+        {busy ? t('btn.posting') : t('btn.postThisShift')}
       </Button>
     </>
   );

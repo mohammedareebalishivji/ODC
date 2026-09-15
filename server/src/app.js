@@ -11,6 +11,10 @@ import authRoutes from './routes/auth.js';
 import meRoutes from './routes/me.js';
 import shiftRoutes from './routes/shifts.js';
 import adminRoutes from './routes/admin.js';
+import paymentRoutes from './routes/payments.js';
+import chatRoutes from './routes/chat.js';
+import disputeRoutes from './routes/disputes.js';
+import kycRoutes from './routes/kyc.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -25,6 +29,10 @@ app.get('/health', async (_req, res) => res.json({ ok: true, feeRate: await getF
 app.use('/api/auth', authRoutes);
 app.use('/api/me', meRoutes);
 app.use('/api/shifts', shiftRoutes);
+app.use('/api/payments', paymentRoutes);
+app.use('/api/chat', chatRoutes);
+app.use('/api/disputes', disputeRoutes);
+app.use('/api/kyc', kycRoutes);
 
 // Super Admin lives ONLY on a private, unlisted path — never a public /api/admin.
 app.use('/tail/z7k9x2/admin', adminRoutes);
