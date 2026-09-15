@@ -1,0 +1,30 @@
+version: 2
+
+updates:
+  # Security patches matter here: the server handles escrow ledgers and KYC
+  # documents. Grouped so routine bumps arrive as one PR a week rather than a
+  # dozen — ungrouped Dependabot noise is why people stop reading it.
+  - package-ecosystem: npm
+    directory: /server
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    groups:
+      server-dependencies:
+        patterns: ['*']
+        update-types: [minor, patch]
+
+  - package-ecosystem: npm
+    directory: /client
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    groups:
+      client-dependencies:
+        patterns: ['*']
+        update-types: [minor, patch]
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly

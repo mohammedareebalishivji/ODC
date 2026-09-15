@@ -4,6 +4,14 @@ All accounts below share one password: **`Test@1234`**
 
 Created automatically (idempotent) on every development boot via `npm run dev` / `./start.sh`. If you've changed the passwords in the DB, delete `server/data/odc.db` and restart to re-seed.
 
+On a **hosted database** (Supabase), the seed is skipped by default. To seed a hosted DB on purpose:
+
+```bash
+cd server && ODC_ALLOW_REMOTE_DEMO_SEED=yes npm run seed-demo
+```
+
+`npm run seed-demo` (previously a no-op) now runs the same demo + test seed with the same `ODC_ALLOW_REMOTE_DEMO_SEED=yes` guard used at boot.
+
 ## App accounts
 
 | Role    | Name                  | Email                 | Phone          | Seeded activity                                                                 |
@@ -11,7 +19,10 @@ Created automatically (idempotent) on every development boot via `npm run dev` /
 | Manager | Test Manager          | testmanager@odc.in    | +91 99990 00001 | 2 open shifts (1 chef, 1 waiter) + 1 matched chef shift w/ 5★ rating            |
 | Chef    | Test Chef             | testchef@odc.in       | +91 99990 00002 | 5★ rating, 1 completed shift (₹135 earned), live open chef shift                |
 | Waiter  | Test Waiter           | testwaiter@odc.in     | +91 99990 00003 | Availability on, live open waiter shift                                         |
-| Super Admin | Test Super Admin  | testsuperadmin@odc.in | —              | Full admin access; permanent code **000000** |
+| Manager | Test Manager 2        | testmanager2@odc.in   | +91 99990 00007 | Extra manager account                                                           |
+| Chef    | Test Chef 2           | testchef2@odc.in      | +91 99990 00008 | Bakery/Pastry, Continental, South Indian                                         |
+| Waiter  | Test Waiter 2         | testwaiter2@odc.in    | +91 99990 00009 | Extra waiter account                                                             |
+| Super Admin | Test Super Admin  | testsuperadmin@odc.in | +91 99990 00004 | Full admin access; permanent code **000000** |
 
 All four are **verified** (badge on). Workers log in as **available** by default.
 

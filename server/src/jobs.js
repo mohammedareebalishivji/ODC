@@ -29,7 +29,17 @@ export async function expirePastShifts() {
   if (expired) console.log(`[job] expired ${expired} shift(s)`);
 }
 
+export async function safeRunExpire() {
+  try {
+    await expirePastShifts();
+  } catch (err) {
+    // A transient DB hiccup must not take the whole API down. Log and let the
+    // next interval tick retry.
+    console.error(`[job] expirePastShifts failed (will retry on the next tick): ${err.message}`);
+  }
+}
+
 export function startJobs() {
-  expirePastShifts();
-  setInterval(expirePastShifts, 60_000).unref();
+  safeRunExpire();
+  setInterval(safeRunExpire, 60_000).unref();
 }

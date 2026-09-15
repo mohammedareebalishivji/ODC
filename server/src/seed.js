@@ -1,8 +1,31 @@
-import { db, audit } from './db.js';
-import { uid, nowIso, DEV } from './config.js';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { db, audit, initDatabase } from './db.js';
+import { uid, nowIso, DEV, DATABASE_URL } from './config.js';
 import { hashPassword } from './auth.js';
 import { generateTotpSecret, totp, staticCodeFor } from './security.js';
 import { hashToken } from './security.js';
+
+/**
+ * Demo/test accounts share one published password (Test@1234), so they must
+ * never be created in a hosted database. NODE_ENV alone is not enough of a
+ * guard: pointing a local dev server at Supabase would otherwise seed them
+ * straight into the cloud. Require an explicit opt-in for a remote host.
+ */
+export function demoSeedAllowed() {
+  if (!DEV) return false;
+  let host = '';
+  try { host = new URL(DATABASE_URL).hostname; } catch { /* treat as local */ }
+  const isLocal = !host || host === 'localhost' || host === '127.0.0.1' || host === '::1';
+  if (isLocal) return true;
+  if (process.env.ODC_ALLOW_REMOTE_DEMO_SEED === 'yes') {
+    console.warn(`[seed] WARNING: seeding demo accounts into remote host ${host} (explicitly allowed).`);
+    return true;
+  }
+  console.log(`[seed] Skipped demo/test accounts — ${host} is not a local database.`);
+  console.log('[seed] Set ODC_ALLOW_REMOTE_DEMO_SEED=yes to override (not recommended).');
+  return false;
+}
 
 export async function ensureAdmin() {
   const existing = await db.get(`SELECT * FROM users WHERE role = 'admin'`);
@@ -103,6 +126,11 @@ export async function seedDemo() {
 
 const TEST_PASSWORD = 'Test@1234';
 
+// The test super admin must own +91 99990 00004: test/api.otplogin.test.js
+// requests an OTP code for that number and asserts the admin portal rule
+// blocks a session. Admin phones are deliberately unique from the app accounts.
+const SUPERADMIN_PHONE = '+919999000004';
+
 export async function seedTestAccounts() {
   const mk = async (role, name, phone, email, fields) => {
     const id = uid('usr');
@@ -149,6 +177,15 @@ export async function seedTestAccounts() {
   });
   const waiterId = await mk('waiter', 'Test Waiter', '+919999000003', 'testwaiter@odc.in', {
     experience: '4–7 years', languages: ['English', 'Hindi', 'Tamil'],
+  });
+  await mk('manager', 'Test Manager 2', '+919999000007', 'testmanager2@odc.in', {
+    businessName: 'Second Test Diner', businessType: 'restaurant', businessAddress: 'Test Lane, Central City',
+  });
+  await mk('chef', 'Test Chef 2', '+919999000008', 'testchef2@odc.in', {
+    specialties: ['Bakery/Pastry', 'Continental', 'South Indian'], years: 3,
+  });
+  await mk('waiter', 'Test Waiter 2', '+919999000009', 'testwaiter2@odc.in', {
+    experience: '1–3 years', languages: ['English', 'Marathi', 'Kannada'],
   });
 
   const date = new Date();
@@ -197,20 +234,30 @@ export async function seedTestAccounts() {
   }
 
   const adminEmail = 'testsuperadmin@odc.in';
-  const sa = await db.get(`SELECT id, totp_secret, static_code_override FROM users WHERE role = 'admin' AND email = $1`, adminEmail);
+  const sa = await db.get(`SELECT id, phone, totp_secret, static_code_override FROM users WHERE role = 'admin' AND email = $1`, adminEmail);
   let adminId;
   let secret;
   if (sa) {
     adminId = sa.id;
     secret = sa.totp_secret || generateTotpSecret();
     if (!sa.totp_secret) await db.run(`UPDATE users SET totp_secret = $1 WHERE id = $2`, secret, adminId);
+    if (!sa.phone) {
+      try {
+        await db.run(`UPDATE users SET phone = $1 WHERE id = $2`, SUPERADMIN_PHONE, adminId);
+      } catch (err) {
+        // Another seeded account already owns this number; idempotency matters
+        // more than forcing it here.
+        if (err.code !== '23505') throw err;
+      }
+    }
   } else {
     adminId = uid('usr');
     secret = generateTotpSecret();
     const res = await db.run(
-      `INSERT INTO users (id, role, name, email, password_hash, active, totp_secret, login_pin, pin_enabled, verified_badge, created_at, updated_at)
-       VALUES ($1,$2,$3,$4,$5,1,$6,$7,1,1,$8,$9) ON CONFLICT (email) DO NOTHING`,
-      adminId, 'admin', 'Test Super Admin', adminEmail, hashPassword(TEST_PASSWORD), secret, hashToken(staticCodeFor(adminEmail)), nowIso(), nowIso()
+      `INSERT INTO users (id, role, name, email, phone, password_hash, active, totp_secret, login_pin, pin_enabled, verified_badge, created_at, updated_at)
+       VALUES ($1,$2,$3,$4,$5,$6,1,$7,$8,1,1,$9,$10) ON CONFLICT DO NOTHING`,
+      adminId, 'admin', 'Test Super Admin', adminEmail, SUPERADMIN_PHONE,
+      hashPassword(TEST_PASSWORD), secret, hashToken(staticCodeFor(adminEmail)), nowIso(), nowIso()
     );
     if (res.changes === 0) {
       const existing = await db.get(`SELECT id FROM users WHERE email = $1`, adminEmail);
@@ -244,4 +291,30 @@ function twoDaysAgo() {
 async function getFeeRateLocal() {
   const row = await db.get(`SELECT rate FROM fees ORDER BY id DESC LIMIT 1`);
   return row ? row.rate : 0.1;
+}
+
+/* --- CLI entry: `node src/seed.js` (npm run seed-demo) -----------------------
+   Runs seedDemo + seedTestAccounts against the configured DATABASE_URL,
+   applying the same remote-host guard as the server boot. To seed a hosted
+   database on purpose:  ODC_ALLOW_REMOTE_DEMO_SEED=yes npm run seed-demo
+--------------------------------------------------------------------------- */
+const isCli = (() => {
+  if (!process.argv[1]) return false;
+  try { return fileURLToPath(import.meta.url) === path.resolve(process.argv[1]); } catch { return false; }
+})();
+
+if (isCli) {
+  console.log('[seed] Running demo/test seed…');
+  (async () => {
+    await initDatabase();
+    if (!demoSeedAllowed()) process.exit(0);
+    const n = await seedDemo();
+    if (n) console.log(`[seed] Created ${n} demo account(s).`);
+    await seedTestAccounts();
+    console.log('[seed] Test accounts ready: manager / chef / waiter / superadmin (password: Test@1234).');
+    process.exit(0);
+  })().catch((err) => {
+    console.error('[seed] failed:', err);
+    process.exit(1);
+  });
 }

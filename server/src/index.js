@@ -1,33 +1,51 @@
-import { PORT, DEV, DATABASE_URL } from './config.js';
+import { PORT } from './config.js';
 import { app } from './app.js';
 import { initDatabase } from './db.js';
 import { configurePush } from './notify.js';
 import { startJobs } from './jobs.js';
-import { ensureAdmin } from './seed.js';
+import { ensureAdmin, demoSeedAllowed } from './seed.js';
 
-/**
- * Demo/test accounts share one published password (Test@1234), so they must
- * never be created in a hosted database. NODE_ENV alone is not enough of a
- * guard: pointing a local dev server at Supabase would otherwise seed them
- * straight into the cloud. Require an explicit opt-in for a remote host.
- */
-function demoSeedAllowed() {
-  if (!DEV) return false;
-  let host = '';
-  try { host = new URL(DATABASE_URL).hostname; } catch { /* treat as local */ }
-  const isLocal = !host || host === 'localhost' || host === '127.0.0.1' || host === '::1';
-  if (isLocal) return true;
-  if (process.env.ODC_ALLOW_REMOTE_DEMO_SEED === 'yes') {
-    console.warn(`[seed] WARNING: seeding demo accounts into remote host ${host} (explicitly allowed).`);
-    return true;
+async function initDatabaseWithRetry() {
+  const MAX_ATTEMPTS = 6;
+  for (let attempt = 1; ; attempt++) {
+    try {
+      await initDatabase();
+      return;
+    } catch (err) {
+      console.error(`[db] PostgreSQL not ready (attempt ${attempt}/${MAX_ATTEMPTS}): ${err.message}`);
+      if (attempt >= MAX_ATTEMPTS) throw err;
+      await new Promise((r) => setTimeout(r, 5000 * attempt));
+    }
   }
-  console.log(`[seed] Skipped demo/test accounts — ${host} is not a local database.`);
-  console.log('[seed] Set ODC_ALLOW_REMOTE_DEMO_SEED=yes to override (not recommended).');
-  return false;
 }
 
 async function main() {
-  await initDatabase();
+  // Listen immediately and warm the database in the background. A hosted
+  // Postgres (Supabase) can take many seconds to accept a cold connection;
+  // gating the listener on that previously left the API unresponsive (and the
+  // dev proxy serving HTML 500s) for ~30s, or killed the process outright on a
+  // connect timeout. Now the port is up at once and transient DB slowness is
+  // retried instead of aborting the boot.
+  const server = app.listen(PORT, () => {
+    console.log(`ODC API listening on :${PORT} (database warming up in background)`);
+  });
+
+  server.on('error', (err) => {
+    if (err.code === 'EADDRINUSE') {
+      console.error(`Port ${PORT} is already in use. Stop the other O.D.C instance first, or run ./start.sh which handles this automatically.`);
+      process.exit(1);
+    }
+    throw err;
+  });
+
+  try {
+    await initDatabaseWithRetry();
+  } catch (err) {
+    console.error(`[fatal] Could not reach the database after repeated attempts: ${err.message}`);
+    console.error('[db] The API stays up but requests will fail until the database is reachable. Restart to retry.');
+    return;
+  }
+
   await ensureAdmin();
   await configurePush();
   startJobs();
@@ -39,18 +57,6 @@ async function main() {
     await seedTestAccounts();
     console.log('[seed] Test accounts ready: manager / chef / waiter / superadmin (password: Test@1234).');
   }
-
-  const server = app.listen(PORT, () => {
-    console.log(`ODC API listening on :${PORT}`);
-  });
-
-  server.on('error', (err) => {
-    if (err.code === 'EADDRINUSE') {
-      console.error(`Port ${PORT} is already in use. Stop the other O.D.C instance first, or run ./start.sh which handles this automatically.`);
-      process.exit(1);
-    }
-    throw err;
-  });
 }
 
 main().catch((err) => {
