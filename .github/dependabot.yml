@@ -4,11 +4,18 @@ updates:
   # Security patches matter here: the server handles escrow ledgers and KYC
   # documents. Grouped so routine bumps arrive as one PR a week rather than a
   # dozen — ungrouped Dependabot noise is why people stop reading it.
+  # Major bumps are ignored on purpose. Grouping only covers minor/patch, so
+  # without this Dependabot still raises a separate PR per major — which is how
+  # React 18->19, Vite 6->8 and react-router-dom 6->7 all arrived at once.
+  # Those are migrations to plan, not patches to merge; do them by hand.
   - package-ecosystem: npm
     directory: /server
     schedule:
       interval: weekly
     open-pull-requests-limit: 5
+    ignore:
+      - dependency-name: '*'
+        update-types: ['version-update:semver-major']
     groups:
       server-dependencies:
         patterns: ['*']
@@ -19,6 +26,9 @@ updates:
     schedule:
       interval: weekly
     open-pull-requests-limit: 5
+    ignore:
+      - dependency-name: '*'
+        update-types: ['version-update:semver-major']
     groups:
       client-dependencies:
         patterns: ['*']
@@ -28,3 +38,6 @@ updates:
     directory: /
     schedule:
       interval: monthly
+    ignore:
+      - dependency-name: '*'
+        update-types: ['version-update:semver-major']

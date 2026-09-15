@@ -109,6 +109,11 @@ for (const f of files) {
 }
 
 // 3. History: a secret deleted later is still public in the commit that added it.
+//
+// Walk each patch per-file so SKIP_FILES applies here too. Scanning the whole
+// patch as one blob made this script flag its own rule patterns in the commit
+// that introduced it — a permanent false positive, which is the fastest way to
+// get a secret scanner switched off.
 if (wantHistory) {
   const commits = git(['rev-list', '--all']).split('\n').filter(Boolean);
   for (const sha of commits) {
@@ -116,8 +121,30 @@ if (wantHistory) {
     try {
       patch = git(['show', '--format=', '--unified=0', '--no-color', sha]);
     } catch { continue; }
-    const added = patch.split('\n').filter((l) => l.startsWith('+') && !l.startsWith('+++')).join('\n');
-    if (added) scan(added, `commit ${sha.slice(0, 8)}`);
+
+    let file = null;
+    let skip = false;
+    let added = [];
+    const flush = () => {
+      if (!skip && added.length) scan(added.join('\n'), `commit ${sha.slice(0, 8)} — ${file}`);
+      added = [];
+    };
+
+    for (const line of patch.split('\n')) {
+      if (line.startsWith('diff --git ')) {
+        flush();
+        file = null;
+        skip = false;
+      } else if (line.startsWith('+++ ')) {
+        // "+++ b/path/to/file"  (or /dev/null for a deletion)
+        const p = line.slice(4).replace(/^b\//, '');
+        file = p === '/dev/null' ? null : p;
+        skip = !file || SKIP_FILES.has(file) || SKIP_EXT.has(path.extname(file).toLowerCase());
+      } else if (line.startsWith('+') && !line.startsWith('+++')) {
+        if (!skip) added.push(line.slice(1));
+      }
+    }
+    flush();
   }
 }
 
