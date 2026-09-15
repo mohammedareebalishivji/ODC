@@ -1,104 +1,150 @@
 # O.D.C — On-Demand Crew
 
-A multi-sided marketplace web app that connects restaurants/bars/hotels with freelance chefs and waiters for single-shift, on-demand hiring. Web MVP only — native apps are a future phase.
+A multi-sided marketplace that connects restaurants, bars and hotels with freelance chefs and waiters for single-shift, on-demand hiring.
 
-> Post a shift → we ping nearby available workers → they accept or counter → you lock in the right person → the request auto-expires in 12 hours if nobody accepts. Every completed shift has a platform service fee (default 10%).
+> Post a shift → nearby available crew get pinged → they accept or counter-offer → you lock one in and the money moves into escrow → they check in on site → you approve and the payout is released. Unclaimed requests auto-expire after 12 hours.
+
+Bilingual (English / हिन्दी), light and dark themes, works one-handed on a phone browser.
+
+**For people using the app, see [USER_GUIDE.md](USER_GUIDE.md).** This file is for running and developing it.
+
+---
 
 ## Stack
 
-- **Frontend:** React 18 + Vite (SPA), hash-based routing, PWA-ready (manifest, service worker, web push). Fully responsive — works one-handed on a phone browser.
-- **Backend:** Node.js + Express, SQLite (`node:sqlite`, zero native deps), JWT access + refresh tokens, bcrypt password hashing, TOTP 2FA, OTP via simulated SMS, role-based access control.
-- Clean REST API under `/api` (plus a separate, private admin path) so native apps can plug in later without a rewrite.
+**Frontend** — React 18 + Vite SPA, hash routing, Tailwind v4 design tokens generated from the Stitch design system, PWA-ready (manifest, service worker, web push).
 
-## Run it
+**Backend** — Node.js + Express on **PostgreSQL** (`pg`), JWT access + rotating refresh tokens, bcrypt password hashing, TOTP 2FA for admins, OTP over simulated SMS, role-based access control enforced server-side on every route.
 
-Requires Node.js ≥ 22.5 (uses the built-in `node:sqlite` module).
+The REST API lives under `/api` (plus a separate private admin path), so native apps can plug in later without a rewrite.
+
+## Requirements
+
+- Node.js **≥ 22.5** (24 recommended — CI runs 24)
+- PostgreSQL **14+** locally, *or* a hosted Postgres such as Supabase
+
+## Run it locally
 
 ```bash
-# Terminal 1 — API server (port 4000)
+# 1. Database
+createdb odc && createdb odc_test
+
+# 2. API — port 4000
 cd server
 npm install
-npm start
+npm start          # or: npm run dev   (watch mode)
 
-# Terminal 2 — web dev server (port 5173, proxies /api)
+# 3. Web — port 5173, proxies /api to :4000
 cd client
 npm install
 npm run dev
 ```
 
-Production mode: `npm run build` in `client`, then the Express server serves the SPA + API together on :4000.
+With no `server/.env` present the API connects to `postgresql://localhost:5432/odc`, creates its schema on boot, and seeds demo data.
 
-Demo data seeds automatically on first run. In **development**, OTP codes are returned in the API response and printed to logs (production uses a real SMS provider).
+For production, run `npm run build` in `client`; Express then serves the SPA and the API together on `:4000`.
 
-## Demo accounts (seeded)
+In development, OTP codes are returned in the API response and printed to the log. Production expects a real SMS provider.
 
-| Role    | Email                 | Phone           | Password   |
-|---------|-----------------------|-----------------|------------|
-| Manager | priya@tamdrum.in      | +91 00000 00001 | Bistro!2026 |
-| Chef    | arjun@chef.in         | +91 00000 00002 | Bistro!2026 |
-| Chef    | lena@chef.in          | +91 00000 00003 | Bistro!2026 |
-| Waiter  | ravi@waiter.in        | +91 00000 00004 | Bistro!2026 |
+## Pointing at Supabase (or any hosted Postgres)
 
-Chef Arjun is seeded with `Tandoor`, `North Indian`, `BBQ/Grill` specialties and marked **Free Now**, so posting a Tandoor shift as Priya immediately triggers his notification.
+Create `server/.env` — it is gitignored, and the app loads it natively (no `dotenv` dependency):
+
+```bash
+cp server/.env.example server/.env
+```
+
+```bash
+DATABASE_URL=postgresql://postgres.<project-ref>:<password>@aws-0-<region>.pooler.supabase.com:6543/postgres
+DB_POOL_MAX=8
+```
+
+Things worth knowing:
+
+- **Percent-encode special characters in the password** (`,` → `%2C`, `@` → `%40`).
+- **Use a pooler endpoint, not the direct host.** `db.<ref>.supabase.co` publishes an IPv6 (`AAAA`) record only, so it is unreachable from an IPv4-only network. The transaction pooler on port `6543` works everywhere.
+- **TLS is verified, not bypassed.** Supabase signs with its own CA, which is bundled at `server/certs/supabase-ca.crt` and pinned. The app refuses to connect to a remote host without a CA rather than falling back to an unverified connection. Override with `DATABASE_CA_PATH`.
+- **Demo seeding is blocked on hosted databases.** The demo accounts share one published password, so the seed only runs against localhost. Override deliberately with `ODC_ALLOW_REMOTE_DEMO_SEED=yes`.
+
+## Accounts
+
+Demo and test accounts are seeded automatically **on a local database only**. Their credentials are listed in [`TEST_ACCOUNTS.md`](TEST_ACCOUNTS.md).
+
+The first-run admin account is created on any fresh database. Its email, password, TOTP secret and current code are **printed to the server console at first boot** — read them there.
+
+> **Do not reuse the documented demo passwords on a database that holds anything real.** They are published in this repository. Override the admin credentials in any deployed environment with `ODC_ADMIN_EMAIL` / `ODC_ADMIN_PASSWORD`, and change the seeded passwords if you ever seed a hosted database.
 
 ## Super Admin (hidden path)
 
-The admin dashboard is deliberately **not discoverable from the public app**:
+The admin dashboard is deliberately not discoverable from the public app — no role at signup, no links, no menu entries.
 
-- No role at signup, no links, no menu entries.
-- Lives only at a private, unlisted URL and a non-guessable API path:
-  - Web: `http://localhost:4000/tail/z7k9x2/admin/home`
-  - API: `/tail/z7k9x2/admin/*` (any other URL returns the public app or 404)
-- `robots.txt` disallows `/tail/` and the app ships `noindex`.
-- Admin accounts are never self-signed-up — created only inside the backend.
-- **Mandatory 2FA (TOTP)** on every admin sign-in, no exceptions.
-- Rate-limited with longer lockouts + audit-logged failures (Slack/email alerting is a production plugin point).
-- Same generic login error whether or not the account/path exists.
+- Web: `/tail/z7k9x2/admin/home` · API: `/tail/z7k9x2/admin/*`
+- `robots.txt` disallows `/tail/`; the app ships `noindex`
+- Admin accounts are never self-registered — only created server-side
+- **Mandatory TOTP 2FA** on every admin sign-in
+- Rate-limited with long lockouts, audit-logged failures, and the same generic error whether or not the account exists
+- The OTP login path explicitly refuses admin accounts, so 2FA cannot be sidestepped
 
-### First-run admin credentials
+## What's built
 
-On a fresh database the server prints these to the console, including the current 2FA code (dev convenience) and the TOTP secret for adding to your authenticator app:
+**Authentication** — passwordless OTP login (password login retained at `/login/password`), OTP signup with verification, password reset, optional sign-in PIN, TOTP for admins, per-device sessions with remote sign-out.
 
+**Manager / venue** — Dispatch Desk with a live applicant queue showing each offer's escrow split; post shifts with role, specialty, date, time, pay range and GPS location; accept or counter; mark shifts complete; release payment; rate crew.
+
+**Worker** — Shift Marketplace leading with take-home pay rather than the advertised rate; inline counter-offers bounded to the acceptable range; availability toggle; My Work; earnings.
+
+**Escrow and payments** — money is committed to escrow when a shift is matched and released on approval. The ledger is **append-only**: a balance is always `SUM(ledger_entries)`, never a mutable column, so the books can be audited and a bug cannot silently lose money. UPI and bank payout methods store only the last four digits.
+
+**Confirmed shift card** — reference code, escrow breakdown, venue contact, digital pass, and a four-step lifecycle tracker. Check-in uses a 4-digit proximity code derived per shift and shown to both parties.
+
+**ShiftConnect** — per-shift chat between the venue and the crew member, with unread counts.
+
+**Disputes** — either party can raise one, which freezes the escrow hold. Only O.D.C can settle it, releasing to the worker or refunding the venue.
+
+**KYC** — Aadhaar / PAN / FSSAI / DigiLocker upload with an admin review queue. Only the last four digits of an identifier are ever stored; the full number is never persisted.
+
+**Super Admin** — live stats, account moderation, shift table, dispute desk, verification queue, treasury terminal (position across every escrow hold, summed from the ledger), revenue and fee configuration with a live calculator, announcements, audit log.
+
+**Platform fee** — stored config (default 10%), editable by Super Admin, with per-shift fee records and full change history. The split is shown to both sides before anyone commits.
+
+**Internationalisation** — every user-facing string is a key, with English and Hindi catalogues kept at exact parity by a CI check. Server-issued notifications and ledger notes store keys plus parameters, so they render in whichever language the reader has chosen.
+
+## Tests and CI
+
+```bash
+cd server && npm test        # 120 tests against a local Postgres
 ```
-[admin] Email:     admin@odc-internal.com
-[admin] Password:  OdcAdmin!2026
-[admin] TOTP:      <secret — import into Google Authenticator>
-[admin] Code now:  <6-digit rolling code>
+
+The suite covers escrow safety (no double-pay, no overdraft, ownership), OTP replay and account-enumeration resistance, dispute freezes, the shift lifecycle, and treasury reconciliation.
+
+> The suite **deletes every row in every table**, so it refuses to run against anything that is not localhost.
+
+Two checks run in CI and are worth running locally:
+
+```bash
+node scripts/check-secrets.mjs [--staged|--history]   # credential scan
+node scripts/check-i18n.mjs                           # en/hi parity
 ```
 
-Override in production with env vars `ODC_ADMIN_EMAIL`, `ODC_ADMIN_PASSWORD` (and disable `ODC_ADMIN_PROVISION`). The admin UI + API are in the same bundle for the MVP; running the dashboard as a separate deployed app on a private subdomain is the next hardening step.
+`check-secrets` scans git **history** as well as the working tree, because a secret deleted in a later commit is still served by the commit that added it.
 
-### Test accounts
-
-Ready-made **test accounts for every app role** (manager, chef, waiter) are auto-seeded in dev — verified badge on, workers available, with pre-seeded shifts/ratings so dashboards look alive. See [`TEST_ACCOUNTS.md`](TEST_ACCOUNTS.md) for full credentials and quick-login curl commands.
-
-## What's in the MVP
-
-- **Roles:** Manager, Chef, Waiter (public signup + OTP verify) and Super Admin (hidden, 2FA).
-- **Manager:** post shifts (role, chef specialty with illustrated tags, date, time, pay range via steppers, location + GPS), review live responses, lock in an accept or counter-offer, rate workers, shift history.
-- **Worker:** specialty multi-select (chefs) / languages & experience (waiters), Free Now toggle, browse nearby matching shifts, accept or counter-offer, track status, read fee math up front, rate managers, earnings view.
-- **Matching:** role + specialty (for chefs) + optional geo-radius; web-push + in-app notifications.
-- **Auto-expiry:** a server job closes open shifts exactly 12 hours after posting; the UI shows a live "closes in 4h 12m" banner and amber/green urgency pills.
-- **Platform fee:** stored config (default 10%), editable by Super Admin (applies to future matches and re-computes existing estimates), per-shift fee records, revenue reporting, fee-change history. Fee math is shown to both sides before confirmation ("Worker receives ₹X · O.D.C fee ₹Y").
-- **Super Admin dashboard:** live stats (users, roles, fill rate, avg time-to-match, top specialties/locations, revenue), account verify/suspend/ban, full shift table with fee records, earnings + fee config, announcements broadcast, audit log (logins, failed logins, resets, admin actions).
-
-## Key security choices
-
-- bcrypt (12 rounds) passwords, never stored in plain text; strong-password rules enforced with a plain-language meter.
-- OTP signup + password reset: 10-minute expiry, 5-attempt cap, rate-limited resends, neutral reset message (no account enumeration).
-- Short-lived JWT access tokens (2h) + rotating refresh tokens (30d), invalidated on logout/password change; per-device session list with remote sign-out.
-- RBAC enforced server-side on every route; role-specific endpoints reject other roles with 403.
-- Input sanitization/validation server-side on every route.
-- Admin 2FA (TOTP) mandatory; separated, rate-limited login with audit trail.
-- HTTPS/TLS is required in any staging/production deploy (not included in local dev).
-
-## Phase 2 (not in this build)
-
-In-app payments/escrow (enabling live fee settlement), WebSocket chat, native iOS/Android apps, real SMS via Twilio, automated ID verification, per-role/city fee variants.
+GitHub Actions (`.github/workflows/ci.yml`) runs on every push and PR to `main`: the server suite against a `postgres:17` service container, the client build plus i18n check, and the secret scan.
 
 ## Layout
 
 ```
-server/   Express API + SQLite + jobs + seed   (src/routes/*, src/jobs.js)
-client/   React PWA                            (src/pages/{manager,worker,admin}, src/ui.jsx)
+server/
+  src/routes/     auth, me, shifts, payments, chat, disputes, kyc, admin
+  src/escrow.js   ledger primitives — the money lives here
+  src/db.js       pool, TLS, schema
+  test/           120 tests
+client/
+  src/i18n/       en + hi catalogues
+  src/pages/      {worker,manager,admin} + shared screens
+  src/index.css   design tokens (light + dark)
+scripts/          CI checks, runnable locally
 ```
+
+## Not built yet
+
+Real SMS delivery (Twilio), WebSocket chat (currently polling), automated ID verification against DigiLocker/Aadhaar APIs, native iOS/Android apps, per-city fee variants, live payment-rail settlement (escrow is modelled and enforced, but no money actually moves through a PSP).

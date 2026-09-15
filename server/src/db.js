@@ -44,53 +44,68 @@ const pool = new pg.Pool({
   // Supabase's shared transaction pooler allocates a modest number of server
   // connections per project, so keep the client pool well under that.
   max: DB_POOL_MAX,
-  idleTimeoutMillis: 30000,
+  // Recycle idle connections before the pooler drops them. Supavisor closes
+  // idle server connections on its own schedule; a client that only finds out
+  // when it next issues a query surfaces as "Connection terminated
+  // unexpectedly" mid-request.
+  idleTimeoutMillis: 10000,
   // A hosted database is a network hop away; 5s is too tight for a cold start.
   connectionTimeoutMillis: 15000,
+  // Keep the TCP connection warm so NAT/Wi-Fi idle timeouts don't silently
+  // black-hole a socket that both ends still believe is open.
+  keepAlive: true,
+  keepAliveInitialDelayMillis: 5000,
 });
 
 pool.on('error', (err) => {
   console.error('[db] Unexpected pool error:', err.message);
 });
 
+
+/**
+ * Run a query on a pooled client.
+ *
+ * Releasing with the error (`release(err)`) destroys the connection instead of
+ * returning it to the pool. A bare release() hands a half-dead socket back for
+ * the next caller to trip over, which is how one dropped connection turns into
+ * a run of failures.
+ */
+async function withClient(fn) {
+  const client = await pool.connect();
+  try {
+    const result = await fn(client);
+    client.release();
+    return result;
+  } catch (err) {
+    client.release(err);
+    throw err;
+  }
+}
+
 export const db = {
   async run(sql, ...params) {
-    const client = await pool.connect();
-    try {
+    return withClient(async (client) => {
       const result = await client.query(sql, params);
       return { changes: result.rowCount, lastID: result.rows[0]?.id ?? null };
-    } finally {
-      client.release();
-    }
+    });
   },
 
   async get(sql, ...params) {
-    const client = await pool.connect();
-    try {
+    return withClient(async (client) => {
       const result = await client.query(sql, params);
       return result.rows[0] ?? undefined;
-    } finally {
-      client.release();
-    }
+    });
   },
 
   async all(sql, ...params) {
-    const client = await pool.connect();
-    try {
+    return withClient(async (client) => {
       const result = await client.query(sql, params);
       return result.rows;
-    } finally {
-      client.release();
-    }
+    });
   },
 
   async exec(sql) {
-    const client = await pool.connect();
-    try {
-      await client.query(sql);
-    } finally {
-      client.release();
-    }
+    return withClient((client) => client.query(sql));
   },
 
   async transaction(fn) {
@@ -99,12 +114,14 @@ export const db = {
       await client.query('BEGIN');
       const result = await fn(client);
       await client.query('COMMIT');
+      client.release();
       return result;
     } catch (err) {
-      await client.query('ROLLBACK');
+      // If the connection itself died, ROLLBACK will throw too — don't let
+      // that mask the original error.
+      try { await client.query('ROLLBACK'); } catch { /* connection is gone */ }
+      client.release(err);
       throw err;
-    } finally {
-      client.release();
     }
   },
 };

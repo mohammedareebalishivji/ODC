@@ -59,6 +59,52 @@ async function main() {
   }
 }
 
+/**
+ * A dropped database socket must not take the API down.
+ *
+ * node-postgres emits 'error' on a Client whose connection dies while idle
+ * (laptop sleep, Wi-Fi change, or the pooler recycling the connection). With
+ * no listener that becomes an uncaught exception and kills the process — the
+ * browser then shows "We couldn't reach the server", which looks like an
+ * outage rather than a blip.
+ *
+ * Every query path already surfaces its own failure, and the pool reconnects
+ * on the next checkout, so these are recoverable. Anything else is a genuine
+ * bug and still exits.
+ */
+const RECOVERABLE_DB_ERRORS = [
+  'Connection terminated unexpectedly',
+  'Connection terminated due to connection timeout',
+  'terminating connection due to administrator command',
+  'read ECONNRESET',
+  'write EPIPE',
+  'socket hang up',
+];
+
+function isRecoverableDbError(err) {
+  const text = `${err?.message ?? ''} ${err?.cause?.message ?? ''}`;
+  return RECOVERABLE_DB_ERRORS.some((m) => text.includes(m))
+    || ['ECONNRESET', 'EPIPE', 'ETIMEDOUT', 'ENETDOWN', 'ENETUNREACH'].includes(err?.code);
+}
+
+process.on('uncaughtException', (err) => {
+  if (isRecoverableDbError(err)) {
+    console.error(`[db] Dropped connection (API still serving): ${err.message}`);
+    return;
+  }
+  console.error('[fatal] Uncaught exception:', err);
+  process.exit(1);
+});
+
+process.on('unhandledRejection', (err) => {
+  if (isRecoverableDbError(err)) {
+    console.error(`[db] Dropped connection (API still serving): ${err?.message}`);
+    return;
+  }
+  console.error('[fatal] Unhandled rejection:', err);
+  process.exit(1);
+});
+
 main().catch((err) => {
   console.error('[fatal] Failed to start:', err);
   process.exit(1);
