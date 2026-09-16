@@ -7,3 +7,6 @@ server/data/
 .env.local
 .aider*
 skills.zip
+.agents/
+agent/
+.claude/
