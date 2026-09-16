@@ -490,6 +490,96 @@ export async function initDatabase() {
       )
     `);
 
+    /* ------------------------- payment provider ------------------------- */
+
+    /*
+     * A venue's actual payment for a shift. One row per attempt to fund a
+     * hold, so a failed card and its successful retry are both on record.
+     *
+     * Amounts here are in PAISE as integers, not rupees as REAL like the
+     * older money columns. That is deliberate: this is the boundary with
+     * Razorpay, which speaks only in integer paise, and reconciliation
+     * compares our number against theirs. A float that is a hair off is a
+     * mismatch that somebody has to investigate by hand.
+     */
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS payment_intents (
+        id           TEXT PRIMARY KEY,
+        hold_id      TEXT REFERENCES escrow_holds(id) ON DELETE CASCADE,
+        shift_id     TEXT REFERENCES shifts(id) ON DELETE SET NULL,
+        payer_id     TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        provider     TEXT NOT NULL DEFAULT 'razorpay',
+        -- Provider identifiers. The order is created by us; the payment id
+        -- arrives later on the webhook, so it starts null.
+        provider_order_id   TEXT,
+        provider_payment_id TEXT,
+        amount_paise BIGINT NOT NULL CHECK (amount_paise > 0),
+        currency     TEXT NOT NULL DEFAULT 'INR',
+        status       TEXT NOT NULL DEFAULT 'created'
+                     CHECK (status IN ('created','authorized','captured','failed','refunded')),
+        failure_reason TEXT,
+        created_at   TEXT NOT NULL,
+        updated_at   TEXT NOT NULL
+      )
+    `);
+    // One provider order maps to exactly one intent; this is what makes
+    // "look up the intent this webhook is about" unambiguous.
+    await client.query(`
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_intent_order
+        ON payment_intents(provider, provider_order_id)
+        WHERE provider_order_id IS NOT NULL
+    `);
+
+    /*
+     * Every webhook the provider sends, stored before it is acted on.
+     *
+     * The UNIQUE constraint on (provider, event_id) is the whole point. A
+     * provider retries until it gets a 2xx, so the same event arrives more
+     * than once as a matter of routine rather than as an error. Recording the
+     * event id first means a redelivery collides here and is skipped, instead
+     * of crediting a ledger twice. Handlers must therefore never run before
+     * this insert succeeds.
+     */
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS webhook_events (
+        id           TEXT PRIMARY KEY,
+        provider     TEXT NOT NULL,
+        event_id     TEXT NOT NULL,
+        event_type   TEXT NOT NULL,
+        payload      TEXT NOT NULL,
+        status       TEXT NOT NULL DEFAULT 'received'
+                     CHECK (status IN ('received','processed','ignored','failed')),
+        error        TEXT,
+        received_at  TEXT NOT NULL,
+        processed_at TEXT,
+        UNIQUE (provider, event_id)
+      )
+    `);
+
+    /* Provider fields on payouts, added after the original schema shipped. */
+    await client.query(`ALTER TABLE payouts ADD COLUMN IF NOT EXISTS provider TEXT`);
+    await client.query(`ALTER TABLE payouts ADD COLUMN IF NOT EXISTS provider_payout_id TEXT`);
+    await client.query(`ALTER TABLE payouts ADD COLUMN IF NOT EXISTS amount_paise BIGINT`);
+    await client.query(`ALTER TABLE payouts ADD COLUMN IF NOT EXISTS failure_reason TEXT`);
+    await client.query(`
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_payout_provider_id
+        ON payouts(provider, provider_payout_id)
+        WHERE provider_payout_id IS NOT NULL
+    `);
+
+    /*
+     * A hold now starts unfunded. Before real payments a hold was created
+     * already 'held', because committing the money was just writing the row;
+     * with a provider in the loop the venue's money has not moved until the
+     * payment is captured. Existing rows keep whatever status they have.
+     */
+    await client.query(`ALTER TABLE escrow_holds ADD COLUMN IF NOT EXISTS funded_at TEXT`);
+    await client.query(`ALTER TABLE escrow_holds DROP CONSTRAINT IF EXISTS escrow_holds_status_check`);
+    await client.query(`
+      ALTER TABLE escrow_holds ADD CONSTRAINT escrow_holds_status_check
+        CHECK (status IN ('pending_payment','held','released','refunded','disputed'))
+    `);
+
     /* Shift lifecycle timestamps, added after the original schema shipped, so
        they are applied to existing tables rather than in CREATE TABLE. */
     await client.query(`ALTER TABLE shifts ADD COLUMN IF NOT EXISTS checked_in_at TEXT`);
@@ -510,6 +600,8 @@ export async function initDatabase() {
     // two queries this table serves.
     await client.query('CREATE INDEX IF NOT EXISTS idx_presence_expires ON user_presence(expires_at)');
     await client.query('CREATE INDEX IF NOT EXISTS idx_presence_shift ON user_presence(shift_id) WHERE shift_id IS NOT NULL');
+    await client.query('CREATE INDEX IF NOT EXISTS idx_intent_hold ON payment_intents(hold_id)');
+    await client.query('CREATE INDEX IF NOT EXISTS idx_webhook_status ON webhook_events(status, received_at)');
 
     await client.query('COMMIT');
     console.log('[db] PostgreSQL schema initialized.');

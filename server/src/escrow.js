@@ -1,5 +1,6 @@
 import { db, getFeeRate, audit } from './db.js';
 import { uid, nowIso, apiError } from './config.js';
+import { PSP, isConfigured as pspConfigured, toPaise, createOrder } from './psp.js';
 
 /**
  * Escrow + ledger primitives.
@@ -52,14 +53,65 @@ export async function openHold({ shiftId, managerId, workerId, grossAmount }) {
   if (gross <= 0) throw apiError('Shift value must be greater than zero.');
 
   const id = uid('hold');
+  /*
+   * With a payment provider configured the venue's money has not actually
+   * moved yet, so the hold opens unfunded and only becomes 'held' when the
+   * provider confirms capture. Without one -- local development, CI, and every
+   * deployment before payments were wired up -- the old behaviour stands and
+   * the hold is immediately live, so nothing that exists today changes.
+   */
+  const status = pspConfigured() ? 'pending_payment' : 'held';
+  const ts = nowIso();
   await db.run(
     `INSERT INTO escrow_holds
-       (id, shift_id, manager_id, worker_id, gross_amount, fee_amount, worker_amount, status, created_at)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,'held',$8)`,
-    id, shiftId, managerId, workerId, gross, fee, worker, nowIso()
+       (id, shift_id, manager_id, worker_id, gross_amount, fee_amount, worker_amount, status, created_at, funded_at)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
+    id, shiftId, managerId, workerId, gross, fee, worker, status, ts,
+    status === 'held' ? ts : null,
   );
-  await audit('escrow.hold_opened', `shift=${shiftId} gross=${gross}`, managerId);
+  await audit('escrow.hold_opened', `shift=${shiftId} gross=${gross} status=${status}`, managerId);
   return id;
+}
+
+/**
+ * Create the provider order a venue pays against, and the local intent row
+ * that the webhook will later match it to.
+ *
+ * The intent is written before the order is requested. If the provider call
+ * then fails we are left with a stray 'created' row, which is harmless; the
+ * other order would leave a real order nobody has a record of, and a payment
+ * against it would arrive as a webhook we cannot attribute to anything.
+ */
+export async function createPaymentIntent(holdId) {
+  const hold = await db.get(`SELECT * FROM escrow_holds WHERE id = $1`, holdId);
+  if (!hold) throw apiError('Escrow record not found.', 404);
+  if (hold.status !== 'pending_payment') {
+    throw apiError('This shift does not need payment.', 409);
+  }
+
+  const amountPaise = toPaise(hold.gross_amount);
+  const id = uid('pin');
+  const ts = nowIso();
+
+  await db.run(
+    `INSERT INTO payment_intents
+       (id, hold_id, shift_id, payer_id, provider, amount_paise, currency, status, created_at, updated_at)
+     VALUES ($1,$2,$3,$4,$5,$6,'INR','created',$7,$8)`,
+    id, holdId, hold.shift_id, hold.manager_id, PSP, amountPaise, ts, ts,
+  );
+
+  const order = await createOrder({
+    amountPaise,
+    receipt: id,
+    notes: { holdId, shiftId: hold.shift_id },
+  });
+
+  await db.run(
+    `UPDATE payment_intents SET provider_order_id = $1, updated_at = $2 WHERE id = $3`,
+    order.id, nowIso(), id,
+  );
+  await audit('payment.intent_created', `intent=${id} order=${order.id}`, hold.manager_id);
+  return { id, orderId: order.id, amountPaise, currency: 'INR' };
 }
 
 /**
@@ -74,6 +126,11 @@ export async function releaseHold(holdId, actorId = null) {
     throw apiError('This payment was already refunded to the venue.');
   }
   if (!hold.worker_id) throw apiError('No worker is assigned to this shift.');
+  if (hold.status === 'pending_payment') {
+    // The single most important check in this file: crediting a worker here
+    // would hand out money the venue never actually paid.
+    throw apiError('This shift has not been paid for yet.', 409);
+  }
 
   const ts = nowIso();
   await db.transaction(async (client) => {

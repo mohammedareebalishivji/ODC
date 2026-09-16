@@ -4,6 +4,14 @@ import pg from 'pg';
 const TEST_DB_URL = process.env.ODC_TEST_DB_URL || 'postgresql://localhost:5432/odc_test';
 process.env.DATABASE_URL = TEST_DB_URL;
 process.env.ODC_JWT_SECRET ||= 'odc-test-secret-0123456789abcdef0123456789abcdef';
+/*
+ * A webhook secret so signature verification is exercised for real rather than
+ * stubbed. Deliberately no RAZORPAY_KEY_ID / _KEY_SECRET: with those unset the
+ * provider counts as unconfigured, holds open straight to 'held' as they
+ * always have, and the existing escrow tests are unaffected. Tests that need
+ * an unfunded hold put one in that state themselves.
+ */
+process.env.RAZORPAY_WEBHOOK_SECRET ||= 'whsec-test-0123456789abcdef';
 
 let testPool = null;
 
@@ -242,20 +250,20 @@ function assertLocalDatabase() {
 export async function resetDb() {
   assertLocalDatabase();
   const { db } = await dbModule();
-  await db.run(`DELETE FROM ratings`);
-  await db.run(`DELETE FROM notifications`);
-  await db.run(`DELETE FROM responses`);
-  await db.run(`DELETE FROM fee_records`);
-  await db.run(`DELETE FROM shifts`);
-  await db.run(`DELETE FROM devices`);
-  await db.run(`DELETE FROM refresh_tokens`);
-  await db.run(`DELETE FROM otps`);
-  await db.run(`DELETE FROM chef_profiles`);
-  await db.run(`DELETE FROM waiter_profiles`);
-  await db.run(`DELETE FROM manager_profiles`);
-  await db.run(`DELETE FROM users`);
-  await db.run(`DELETE FROM audit_logs`);
-  await db.run(`DELETE FROM announcements`);
-  await db.run(`DELETE FROM app_meta`);
-  await db.run(`DELETE FROM fees`);
+  /*
+   * Every table in the schema, discovered rather than listed.
+   *
+   * This used to be a hand-maintained list of DELETEs, which quietly stopped
+   * being "every table" each time one was added. webhook_events was the case
+   * that bit: it has no foreign key, so unlike the rest it was not even
+   * cascaded away by deleting users, and rows survived between files to
+   * collide with the next run. TRUNCATE ... CASCADE cannot drift.
+   */
+  const tables = await db.all(
+    `SELECT tablename FROM pg_tables WHERE schemaname = 'public'`,
+  );
+  if (tables.length === 0) return;
+  const list = tables.map((t) => `"${t.tablename}"`).join(', ');
+  await db.exec(`TRUNCATE ${list} RESTART IDENTITY CASCADE`);
 }
+

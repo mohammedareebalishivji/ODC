@@ -13,3 +13,8 @@ agent/
 
 # Database dumps — contain password hashes and TOTP secrets.
 server/backups/
+
+# Ruflo runtime state — local agent memory and swarm databases, not project files.
+.claude-flow/
+.swarm/
+ruvector.db

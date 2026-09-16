@@ -101,6 +101,10 @@ The admin dashboard is deliberately not discoverable from the public app — no 
 
 ![Where the money sits: the venue commits on match, funds are held in an escrow hold that freezes while a dispute is open, and release pays the crew member. A platform fee, 10% by default, splits off the hold. Balances are computed as SUM(ledger_entries) against an append-only ledger with no mutable balance column.](docs/images/escrow.svg)
 
+**Payment provider** — Razorpay sits behind `server/src/psp.js`; nothing else in the app sees an API key. With it unconfigured the app runs exactly as before — holds open live, no provider call is made — which is how local development and CI run. Configured, a hold opens as `pending_payment` and only becomes live once the provider confirms capture, so `releaseHold` cannot credit a worker money the venue never sent.
+
+Webhooks land on `/api/payments/webhook/razorpay`. Three things make them safe to trust: the signature is checked against the **raw request bytes** before the body is read for meaning; every event is recorded under a `UNIQUE (provider, event_id)` before any handler runs, so the provider's routine redeliveries collide instead of paying twice; and the status code is chosen to control retries — a bad signature or an uninteresting event returns 2xx so it is retired, while a genuine failure on our side returns 5xx so it comes back. A failed payout writes a reversing ledger entry rather than deleting the debit, because the ledger is append-only and the failed attempt is part of the history.
+
 **Confirmed shift card** — reference code, escrow breakdown, venue contact, digital pass, and a four-step lifecycle tracker. Check-in uses a 4-digit proximity code derived per shift and shown to both parties.
 
 **ShiftConnect** — per-shift chat between the venue and the crew member, with unread counts, delivered live.
@@ -126,10 +130,10 @@ Every event names its audience explicitly and is filtered per connection; nothin
 ## Tests and CI
 
 ```bash
-cd server && npm test        # 131 tests against a local Postgres
+cd server && npm test        # 146 tests against a local Postgres
 ```
 
-The suite covers escrow safety (no double-pay, no overdraft, ownership), OTP replay and account-enumeration resistance, dispute freezes, the shift lifecycle, treasury reconciliation, and real-time delivery — including that an event never reaches a connection outside its audience, and that a closed stream releases its listener.
+The suite covers escrow safety (no double-pay, no overdraft, ownership), webhook signature verification and redelivery idempotency, OTP replay and account-enumeration resistance, dispute freezes, the shift lifecycle, treasury reconciliation, and real-time delivery — including that an event never reaches a connection outside its audience, and that a closed stream releases its listener.
 
 > The suite **deletes every row in every table**, so it refuses to run against anything that is not localhost.
 
@@ -150,8 +154,9 @@ GitHub Actions (`.github/workflows/ci.yml`) runs on every push and PR to `main`:
 server/
   src/routes/     auth, me, shifts, payments, chat, disputes, kyc, admin
   src/escrow.js   ledger primitives — the money lives here
+  src/psp.js      payment provider — the only place an API key is read
   src/db.js       pool, TLS, schema
-  test/           120 tests
+  test/           146 tests
 client/
   src/i18n/       en + hi catalogues
   src/pages/      {worker,manager,admin} + shared screens
@@ -161,4 +166,6 @@ scripts/          CI checks, runnable locally
 
 ## Not built yet
 
-Real SMS delivery (Twilio), automated ID verification against DigiLocker/Aadhaar APIs, native iOS/Android apps, per-city fee variants, live payment-rail settlement (escrow is modelled and enforced, but no money actually moves through a PSP).
+Real SMS delivery (Twilio), automated ID verification against DigiLocker/Aadhaar APIs, native iOS/Android apps, per-city fee variants.
+
+Payments are partly wired: the schema, the provider module and inbound webhook handling are in place and tested, but the checkout call that creates an order from the browser, and RazorpayX payouts, are not yet built — and no money moves until a Razorpay account is connected.

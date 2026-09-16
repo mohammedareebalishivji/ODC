@@ -27,6 +27,7 @@ export const EVENT = {
   SHIFT_RESPONSE: 'shift.response',
   SHIFT_UPDATED: 'shift.updated',
   PRESENCE: 'presence',
+  PAYMENT: 'payment',
 };
 
 /**
