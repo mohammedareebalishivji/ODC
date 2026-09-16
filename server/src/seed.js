@@ -3,7 +3,7 @@ import { fileURLToPath } from 'node:url';
 import { db, audit, initDatabase } from './db.js';
 import { uid, nowIso, DEV, DATABASE_URL } from './config.js';
 import { hashPassword } from './auth.js';
-import { generateTotpSecret, totp, staticCodeFor } from './security.js';
+import { generateTotpSecret, totp, generateStaticCode, TEST_ADMIN_CODE } from './security.js';
 import { hashToken } from './security.js';
 
 /**
@@ -30,22 +30,29 @@ export function demoSeedAllowed() {
 export async function ensureAdmin() {
   const existing = await db.get(`SELECT * FROM users WHERE role = 'admin'`);
   if (existing) {
-    const code = existing.static_code_override || staticCodeFor(existing.email);
-    await db.run(`UPDATE users SET login_pin = $1, pin_enabled = 1 WHERE id = $2`, hashToken(code), existing.id);
+    // An account provisioned before codes were per-account has none stored.
+    // Mint one now rather than re-applying the old shared constant.
+    const code = existing.static_code_override || generateStaticCode();
+    await db.run(
+      `UPDATE users SET static_code_override = $1, login_pin = $2, pin_enabled = 1 WHERE id = $3`,
+      code, hashToken(code), existing.id,
+    );
+    existing.static_code_override = code;
     if (DEV) {
       console.log('[admin] Intranet path ready. Sign in with the permanent code below.');
       console.log('[admin] Current TOTP code:', totp(existing.totp_secret));
-      console.log('[admin] Permanent code:', existing.static_code_override || staticCodeFor(existing.email) + (existing.static_code_override ? '' : ' (never changes)'));
+      console.log('[admin] Permanent code:', existing.static_code_override);
     }
     return existing;
   }
   const email = (process.env.ODC_ADMIN_EMAIL || 'admin@odc-internal.com').toLowerCase();
   const password = process.env.ODC_ADMIN_PASSWORD || 'OdcAdmin!2026';
   const secret = generateTotpSecret();
+  const staticCode = generateStaticCode();
   const id = uid('usr');
   const result = await db.run(
-    `INSERT INTO users (id, role, name, email, password_hash, active, totp_secret, login_pin, pin_enabled, created_at, updated_at) VALUES ($1,$2,$3,$4,$5,1,$6,$7,1,$8,$9) ON CONFLICT (email) DO NOTHING`,
-    id, 'admin', 'Platform Owner', email, hashPassword(password), secret, hashToken(staticCodeFor(email)), nowIso(), nowIso()
+    `INSERT INTO users (id, role, name, email, password_hash, active, totp_secret, static_code_override, login_pin, pin_enabled, created_at, updated_at) VALUES ($1,$2,$3,$4,$5,1,$6,$7,$8,1,$9,$10) ON CONFLICT (email) DO NOTHING`,
+    id, 'admin', 'Platform Owner', email, hashPassword(password), secret, staticCode, hashToken(staticCode), nowIso(), nowIso()
   );
   if (result.changes === 0) {
     const existing = await db.get(`SELECT * FROM users WHERE email = $1`, email);
@@ -60,7 +67,7 @@ export async function ensureAdmin() {
     console.log(`[admin] Email: ${email}`);
     console.log(`[admin] Password: ${password}`);
     console.log(`[admin] TOTP secret: ${secret}`);
-    console.log(`[admin] Permanent code: ${staticCodeFor(email)} (never changes)`);
+    console.log(`[admin] Permanent code: ${staticCode} (store it — it is not shown again)`);
     console.log('=============================');
   }
   return { id, email };
@@ -257,7 +264,7 @@ export async function seedTestAccounts() {
       `INSERT INTO users (id, role, name, email, phone, password_hash, active, totp_secret, login_pin, pin_enabled, verified_badge, created_at, updated_at)
        VALUES ($1,$2,$3,$4,$5,$6,1,$7,$8,1,1,$9,$10) ON CONFLICT DO NOTHING`,
       adminId, 'admin', 'Test Super Admin', adminEmail, SUPERADMIN_PHONE,
-      hashPassword(TEST_PASSWORD), secret, hashToken(staticCodeFor(adminEmail)), nowIso(), nowIso()
+      hashPassword(TEST_PASSWORD), secret, hashToken(TEST_ADMIN_CODE), nowIso(), nowIso()
     );
     if (res.changes === 0) {
       const existing = await db.get(`SELECT id FROM users WHERE email = $1`, adminEmail);
@@ -266,14 +273,17 @@ export async function seedTestAccounts() {
       await audit('test_seed', 'Test super admin account created', adminId);
     }
   }
-  await db.run(`UPDATE users SET login_pin = $1, pin_enabled = 1 WHERE id = $2`,
-    hashToken(sa && sa.static_code_override ? sa.static_code_override : staticCodeFor(adminEmail)), adminId
+  // Store the code itself as well as its hash: the account's own code is what
+  // /self and /users report back, and a login_pin alone cannot be read out.
+  const testCode = (sa && sa.static_code_override) || TEST_ADMIN_CODE;
+  await db.run(`UPDATE users SET static_code_override = $1, login_pin = $2, pin_enabled = 1 WHERE id = $3`,
+    testCode, hashToken(testCode), adminId
   );
   if (DEV) {
     console.log('=============================');
     console.log('[test-superadmin] Email: ' + adminEmail);
     console.log('[test-superadmin] Password: ' + TEST_PASSWORD);
-    console.log('[test-superadmin] Permanent code: ' + (sa && sa.static_code_override ? sa.static_code_override : staticCodeFor(adminEmail)) + ' (never changes)');
+    console.log('[test-superadmin] Permanent code: ' + testCode + ' (test accounts only)');
     console.log('=============================');
   }
 

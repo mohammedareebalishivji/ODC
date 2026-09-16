@@ -72,7 +72,22 @@ export function generateTotpSecret() {
   return crypto.randomBytes(20).toString('base64');
 }
 
-// Default 6-digit admin code. Admins can change it from "My account".
-export function staticCodeFor(email) {
-  return '000000';
+/**
+ * A 6-digit fallback second factor for an admin, generated per account.
+ *
+ * This was previously the constant '000000' for every admin, re-applied on
+ * every boot by ensureAdmin(). Since it is an accepted alternative to TOTP at
+ * /login, and the constant is visible to anyone reading this source, the
+ * mandatory 2FA had a permanent publicly-known bypass. Each admin now gets
+ * their own, generated once and stored on the account as static_code_override.
+ */
+export function generateStaticCode() {
+  return String(crypto.randomInt(0, 1_000_000)).padStart(6, '0');
 }
+
+/**
+ * The test super admin's code is deliberately fixed so the suite stays
+ * deterministic. That account is only ever created by the demo seed, which
+ * refuses to run against anything but localhost.
+ */
+export const TEST_ADMIN_CODE = '000000';

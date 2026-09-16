@@ -1,6 +1,6 @@
 import { test, assert } from './helpers.js';
 
-const { signJwt, verifyJwt, hashToken, randomToken, totp, verifyTotp, generateTotpSecret } = await import('../src/security.js');
+const { signJwt, verifyJwt, hashToken, randomToken, totp, verifyTotp, generateTotpSecret, generateStaticCode } = await import('../src/security.js');
 
 test('signJwt/verifyJwt round-trip carries payload and TTL', () => {
   const token = signJwt({ sub: 'usr_1', role: 'chef' }, 3600);
@@ -61,4 +61,18 @@ test('verifyTotp rejects wrong codes and rejects malformed codes', () => {
 test('generateTotpSecret returns a base64 secret', () => {
   const s = generateTotpSecret();
   assert.ok(typeof s === 'string' && s.length >= 20);
+});
+
+test('an admin fallback code is per-account, not a shared constant', () => {
+  // This was '000000' for every admin, hardcoded in security.js and re-applied
+  // on every boot. The fallback code is accepted in place of TOTP at admin
+  // login, so a constant in public source is a permanent 2FA bypass. Fifty
+  // draws is plenty to catch anyone turning it back into a literal.
+  const seen = new Set();
+  for (let i = 0; i < 50; i++) {
+    const code = generateStaticCode();
+    assert.match(code, /^\d{6}$/, `expected 6 digits, got ${code}`);
+    seen.add(code);
+  }
+  assert.ok(seen.size > 1, 'generateStaticCode returned the same code every time');
 });

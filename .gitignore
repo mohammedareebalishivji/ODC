@@ -10,3 +10,6 @@ skills.zip
 .agents/
 agent/
 .claude/
+
+# Database dumps — contain password hashes and TOTP secrets.
+server/backups/

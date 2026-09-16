@@ -74,7 +74,7 @@ Things worth knowing:
 
 Demo and test accounts are seeded automatically **on a local database only**. Their credentials are listed in [`TEST_ACCOUNTS.md`](TEST_ACCOUNTS.md).
 
-The first-run admin account is created on any fresh database. Its email, password, TOTP secret and current code are **printed to the server console at first boot** — read them there.
+The first-run admin account is created on any fresh database. Its email, password, TOTP secret and randomly generated fallback code are **printed to the server console at first boot** — read them there and store them in a password manager. They are not shown again.
 
 > **Do not reuse the documented demo passwords on a database that holds anything real.** They are published in this repository. Override the admin credentials in any deployed environment with `ODC_ADMIN_EMAIL` / `ODC_ADMIN_PASSWORD`, and change the seeded passwords if you ever seed a hosted database.
 
@@ -85,7 +85,7 @@ The admin dashboard is deliberately not discoverable from the public app — no 
 - Web: `/tail/z7k9x2/admin/home` · API: `/tail/z7k9x2/admin/*`
 - `robots.txt` disallows `/tail/`; the app ships `noindex`
 - Admin accounts are never self-registered — only created server-side
-- **Mandatory TOTP 2FA** on every admin sign-in
+- **Mandatory second factor** on every admin sign-in: an authenticator TOTP code, or the account's own randomly generated 6-digit fallback code (changeable from "My account")
 - Rate-limited with long lockouts, audit-logged failures, and the same generic error whether or not the account exists
 - The OTP login path explicitly refuses admin accounts, so 2FA cannot be sidestepped
 

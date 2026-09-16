@@ -3,7 +3,7 @@ import crypto from 'node:crypto';
 import { db, getFeeRate, audit } from '../db.js';
 import { asyncH, authGuard } from '../middleware.js';
 import { verifyPassword, hashPassword, serializeUser, assertStrongPassword } from '../auth.js';
-import { totp, verifyTotp, signJwt, generateTotpSecret, hashToken, staticCodeFor } from '../security.js';
+import { totp, verifyTotp, signJwt, generateTotpSecret, hashToken } from '../security.js';
 import { uid, nowIso, apiError, DEV } from '../config.js';
 import { loginLimiter } from '../rate.js';
 import { notifyUser } from '../notify.js';
@@ -226,7 +226,9 @@ function otpauthUri(email, secret) {
 }
 
 function adminDisplayCode(u) {
-  return u.static_code_override || staticCodeFor(u.email);
+  // Every admin now carries its own code; null only for a row that predates
+  // the backfill in ensureAdmin() and has not booted since.
+  return u.static_code_override || null;
 }
 
 router.get('/users', ...requireAdmin(), asyncH(async (req, res) => {
