@@ -34,10 +34,14 @@ updates:
         patterns: ['*']
         update-types: [minor, patch]
 
+  # Unlike npm, major bumps here are NOT ignored. A major on a first-party
+  # GitHub action is almost always a runner/Node runtime bump, not an API
+  # change -- ignoring them is how this repo ended up three majors behind on
+  # actions/checkout and running deprecated Node 20.
   - package-ecosystem: github-actions
     directory: /
     schedule:
       interval: monthly
-    ignore:
-      - dependency-name: '*'
-        update-types: ['version-update:semver-major']
+    groups:
+      github-actions:
+        patterns: ['*']
