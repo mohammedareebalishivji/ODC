@@ -12,6 +12,26 @@
     <link rel="apple-touch-icon" href="/icon-192.png" />
     <meta name="robots" content="noindex" />
     <title>O.D.C — On-Demand Crew</title>
+
+    <!--
+      Link previews. noindex above keeps this out of search results; these tags
+      are for the places a link actually gets pasted -- WhatsApp, Slack, a DM.
+      og:image is root-relative, which every scraper this app realistically
+      meets will resolve. Set an absolute https URL here (and og:url) once the
+      app has a real domain, because Facebook's scraper is the one that insists.
+    -->
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="O.D.C" />
+    <meta property="og:title" content="O.D.C — On-Demand Crew" />
+    <meta
+      property="og:description"
+      content="Single-shift hiring for restaurants, bars and hotels. Post a shift, nearby crew answer, and the money sits in escrow until the work is done."
+    />
+    <meta property="og:image" content="/og.png" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:image:alt" content="O.D.C — On-Demand Crew, hospitality logistics" />
+    <meta name="twitter:card" content="summary_large_image" />
   </head>
   <body>
     <div id="root"></div>

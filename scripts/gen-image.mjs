@@ -8,6 +8,14 @@
  * The key is read from GEMINI_API_KEY, or from a GEMINI_API_KEY= line in
  * ~/.gemini/.env. It is never logged and never written into the repo.
  *
+ * Note that image generation is not on the Gemini free tier: without billing
+ * enabled on the key's project, every image model answers 429 with
+ * "limit: 0" rather than a quota that refills. Text models still work on a
+ * free key, so a 429 here means billing, not rate limiting.
+ *
+ * The documentation artwork is NOT produced by this -- see gen-brand-svg.mjs.
+ * This stays for one-off images.
+ *
  * This is a local authoring tool, not part of the build or CI -- the images it
  * produces are committed, so nobody else needs a key to check the repo out.
  */
@@ -16,7 +24,7 @@ import os from 'node:os';
 import path from 'node:path';
 
 const HOST = 'https://generativelanguage.googleapis.com/v1beta';
-const DEFAULT_MODEL = 'gemini-2.5-flash-image';
+const DEFAULT_MODEL = 'gemini-3-pro-image';
 
 function apiKey() {
   if (process.env.GEMINI_API_KEY) return process.env.GEMINI_API_KEY.trim();

@@ -1,8 +1,12 @@
+![O.D.C — single-shift hiring for restaurants, bars and hotels, with money held in escrow. The shift lifecycle runs post, ping, accept, escrow, check-in, payout.](docs/images/hero.svg)
+
 # O.D.C — On-Demand Crew
 
 A multi-sided marketplace that connects restaurants, bars and hotels with freelance chefs and waiters for single-shift, on-demand hiring.
 
 > Post a shift → nearby available crew get pinged → they accept or counter-offer → you lock one in and the money moves into escrow → they check in on site → you approve and the payout is released. Unclaimed requests auto-expire after 12 hours.
+
+![The shift lifecycle in six steps: post a shift; nearby crew are pinged; they accept or counter within your pay range; on match an escrow hold opens and the split is shown to both sides; the crew member checks in with a four-digit proximity code; approval releases the hold and requests payout.](docs/images/lifecycle.svg)
 
 Bilingual (English / हिन्दी), light and dark themes, works one-handed on a phone browser.
 
@@ -95,6 +99,8 @@ The admin dashboard is deliberately not discoverable from the public app — no 
 
 **Escrow and payments** — money is committed to escrow when a shift is matched and released on approval. The ledger is **append-only**: a balance is always `SUM(ledger_entries)`, never a mutable column, so the books can be audited and a bug cannot silently lose money. UPI and bank payout methods store only the last four digits.
 
+![Where the money sits: the venue commits on match, funds are held in an escrow hold that freezes while a dispute is open, and release pays the crew member. A platform fee, 10% by default, splits off the hold. Balances are computed as SUM(ledger_entries) against an append-only ledger with no mutable balance column.](docs/images/escrow.svg)
+
 **Confirmed shift card** — reference code, escrow breakdown, venue contact, digital pass, and a four-step lifecycle tracker. Check-in uses a 4-digit proximity code derived per shift and shown to both parties.
 
 **ShiftConnect** — per-shift chat between the venue and the crew member, with unread counts, delivered live.
@@ -102,6 +108,8 @@ The admin dashboard is deliberately not discoverable from the public app — no 
 **Real-time** — the API holds an SSE stream per browser tab (`/api/events`) and pushes chat messages, notifications, shift responses and presence the moment they happen. Polling remains only as a slow safety net for reconnects.
 
 Every event names its audience explicitly and is filtered per connection; nothing is broadcast to all listeners, because this bus carries shift and presence data. A single instance needs no extra infrastructure — it publishes its own writes in-process. Set `SUPABASE_URL` and `SUPABASE_SERVICE_KEY` to additionally fan events across multiple API instances via Supabase Realtime; unset, that path is simply skipped.
+
+![How an event reaches a browser: a write happens, it goes onto an in-process bus where every event names its audience, out over one SSE stream per browser tab, and the tab renders instantly. Supabase Realtime is an optional multi-instance fan-out. Polling remains only as a slow safety net.](docs/images/realtime.svg)
 
 **Presence** — `user_presence` tracks who is online and who is on site. Presence is a claim with an expiry rather than a flag, because a browser that crashes never sends "offline"; a lapsed heartbeat reads as offline regardless of the stored status, and a sweep settles stale rows.
 

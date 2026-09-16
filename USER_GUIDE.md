@@ -81,6 +81,8 @@ The role cards on the login screen only tailor the wording — your actual role 
 
 ## If you run a venue
 
+![Running a venue, in four steps: post a shift with role, specialty, time and pay range; watch the Dispatch Desk as applicants queue with their escrow split; lock one in, which opens escrow the moment you accept; approve after the shift to release the payout.](docs/images/guide-venue.svg)
+
 ### Posting a shift
 
 **Post a Shift** and fill in what you need: role, specialty for chefs, date, time window, pay range, and location. Adding your GPS location means nearby crew see it first.
@@ -128,6 +130,8 @@ Releasing is the step that actually pays them. Until you do, the money sits in e
 
 ## If you work shifts
 
+![Working shifts, in four steps: find work nearby sorted by take-home rather than headline rate; accept or counter within the venue's range; check in on site by sharing the four-digit proximity code; get paid once the venue approves.](docs/images/guide-worker.svg)
+
 ### Finding work
 
 **Shift Marketplace** lists everything open to you — matched on your role, your specialties if you're a chef, and your location.
@@ -162,6 +166,8 @@ After the venue marks the shift complete and releases payment, the money appears
 ---
 
 ## Money and escrow
+
+![Money and escrow, in four steps: funds are committed and held the moment you match; the shift is worked and check-in and completion are recorded; the venue signs the shift off; the payout goes to UPI or bank, with only the last four digits stored.](docs/images/guide-money.svg)
 
 Everything lives under **Payments**.
 

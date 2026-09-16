@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 630" width="1200" height="630" role="img">
+<defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#2c7a7b"/><stop offset="1" stop-color="#006162"/></linearGradient><marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" fill="#bec9c8"/></marker></defs>
+
+  <rect width="1200" height="630" fill="url(#g)"/>
+  <circle cx="1080" cy="80" r="260" fill="#ffffff" fill-opacity="0.05"/>
+  <circle cx="120" cy="580" r="200" fill="#ffffff" fill-opacity="0.05"/>
+  <g transform="translate(510 150) scale(3.7500)"><rect width="48" height="48" rx="12" fill="#ffffff"/><circle cx="24" cy="15.5" r="2.6" fill="#006162"/><path d="M11 31c0-7.2 5.8-13 13-13s13 5.8 13 13H11z" fill="#006162"/><rect x="9" y="33" width="30" height="4.2" rx="2.1" fill="#fe9569"/></g>
+  <text x="600" y="430" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,'Helvetica Neue',Arial,sans-serif" font-size="118" font-weight="700" fill="#ffffff" letter-spacing="1.18">O<tspan fill="#fe9569">.</tspan>D<tspan fill="#fe9569">.</tspan>C</text>
+  <rect x="420" y="462" width="360" height="3" rx="1.5" fill="#fe9569"/>
+  <text x="600" y="506" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,'Helvetica Neue',Arial,sans-serif" font-size="21" font-weight="700" fill="#d3ecec" text-anchor="middle" letter-spacing="5.5" opacity="1">ON-DEMAND CREW</text>
+  <text x="600" y="556" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,'Helvetica Neue',Arial,sans-serif" font-size="22" font-weight="400" fill="#ffffff" text-anchor="middle" letter-spacing="0" opacity="0.92">Single-shift hiring for restaurants, bars and hotels — with escrow.</text>
+</svg>
