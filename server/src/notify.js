@@ -1,6 +1,7 @@
 import webpush from 'web-push';
 import { db } from './db.js';
 import { uid, nowIso, DEV } from './config.js';
+import { publish, EVENT } from './events.js';
 
 let configured = false;
 
@@ -30,6 +31,10 @@ export async function notifyUser(userId, title, body, type = null, data = null) 
     `INSERT INTO notifications (id, user_id, title, body, type, data, created_at) VALUES ($1,$2,$3,$4,$5,$6,$7)`,
     uid('ntf'), userId, title, body, type, data ? JSON.stringify(data) : null, nowIso()
   );
+
+  // Live push to an open SSE stream, so the bell updates without waiting for
+  // the next poll. Web push below still covers users who are not on the page.
+  publish(EVENT.NOTIFICATION, [userId], { title, body, type, data });
 
   const devices = await db.all(`SELECT subscription FROM devices WHERE user_id = $1`, userId);
   for (const d of devices) {

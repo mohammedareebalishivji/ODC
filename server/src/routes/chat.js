@@ -3,6 +3,7 @@ import { db } from '../db.js';
 import { authGuard, asyncH } from '../middleware.js';
 import { uid, nowIso, apiError } from '../config.js';
 import { notifyUser } from '../notify.js';
+import { publish, EVENT } from '../events.js';
 
 const router = Router();
 const clean = (v, max = 2000) => (typeof v === 'string' ? v.trim().slice(0, max) : '');
@@ -152,6 +153,16 @@ router.post(
         WHERE conversation_id = $1 AND user_id <> $2`,
       req.params.id, req.user.id
     );
+
+    // Push to any SSE stream this process is holding. Instant, and unrelated
+    // to the (optional) cross-instance Realtime path.
+    publish(EVENT.CHAT_MESSAGE, others.map((o) => o.user_id), {
+      conversationId: req.params.id,
+      messageId: id,
+      senderId: req.user.id,
+      senderName: req.user.name,
+      body,
+    });
     for (const o of others) {
       await notifyUser(o.user_id, req.user.name, body.slice(0, 120), 'chat', {
         conversationId: req.params.id,

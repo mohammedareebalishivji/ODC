@@ -464,6 +464,32 @@ export async function initDatabase() {
       )
     `);
 
+    /* ------------------------------------------------------------------
+       Presence.
+
+       One row per user, not an append-only log: presence is a current
+       fact, and rewriting a single row keeps the realtime stream small.
+       History, if it is ever wanted, belongs in audit_logs.
+
+       `expires_at` is what makes this honest. A browser that is closed or
+       loses power never sends "offline", so a status field alone would
+       leave people showing as online forever. Anyone past their expiry is
+       treated as offline no matter what `status` says.
+    ------------------------------------------------------------------ */
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS user_presence (
+        user_id     TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+        status      TEXT NOT NULL DEFAULT 'offline'
+                    CHECK (status IN ('online','away','offline')),
+        -- Set while the user is actively working a shift, so a venue can see
+        -- "on site" rather than merely "app open".
+        shift_id    TEXT REFERENCES shifts(id) ON DELETE SET NULL,
+        last_seen_at TEXT NOT NULL,
+        expires_at  TEXT NOT NULL,
+        updated_at  TEXT NOT NULL
+      )
+    `);
+
     /* Shift lifecycle timestamps, added after the original schema shipped, so
        they are applied to existing tables rather than in CREATE TABLE. */
     await client.query(`ALTER TABLE shifts ADD COLUMN IF NOT EXISTS checked_in_at TEXT`);
@@ -480,6 +506,10 @@ export async function initDatabase() {
     await client.query('CREATE INDEX IF NOT EXISTS idx_conv_members_user ON conversation_members(user_id)');
     await client.query('CREATE INDEX IF NOT EXISTS idx_disputes_status ON disputes(status)');
     await client.query('CREATE INDEX IF NOT EXISTS idx_kyc_user ON kyc_documents(user_id, status)');
+    // Sweeping stale presence and listing who is live on a shift are the only
+    // two queries this table serves.
+    await client.query('CREATE INDEX IF NOT EXISTS idx_presence_expires ON user_presence(expires_at)');
+    await client.query('CREATE INDEX IF NOT EXISTS idx_presence_shift ON user_presence(shift_id) WHERE shift_id IS NOT NULL');
 
     await client.query('COMMIT');
     console.log('[db] PostgreSQL schema initialized.');

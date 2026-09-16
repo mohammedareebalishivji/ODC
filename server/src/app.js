@@ -15,6 +15,8 @@ import paymentRoutes from './routes/payments.js';
 import chatRoutes from './routes/chat.js';
 import disputeRoutes from './routes/disputes.js';
 import kycRoutes from './routes/kyc.js';
+import eventRoutes from './routes/events.js';
+import presenceRoutes from './routes/presence.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -33,6 +35,8 @@ app.use('/api/payments', paymentRoutes);
 app.use('/api/chat', chatRoutes);
 app.use('/api/disputes', disputeRoutes);
 app.use('/api/kyc', kycRoutes);
+app.use('/api/events', eventRoutes);
+app.use('/api/presence', presenceRoutes);
 
 // Super Admin lives ONLY on a private, unlisted path — never a public /api/admin.
 app.use('/tail/z7k9x2/admin', adminRoutes);

@@ -97,7 +97,13 @@ The admin dashboard is deliberately not discoverable from the public app — no 
 
 **Confirmed shift card** — reference code, escrow breakdown, venue contact, digital pass, and a four-step lifecycle tracker. Check-in uses a 4-digit proximity code derived per shift and shown to both parties.
 
-**ShiftConnect** — per-shift chat between the venue and the crew member, with unread counts.
+**ShiftConnect** — per-shift chat between the venue and the crew member, with unread counts, delivered live.
+
+**Real-time** — the API holds an SSE stream per browser tab (`/api/events`) and pushes chat messages, notifications, shift responses and presence the moment they happen. Polling remains only as a slow safety net for reconnects.
+
+Every event names its audience explicitly and is filtered per connection; nothing is broadcast to all listeners, because this bus carries shift and presence data. A single instance needs no extra infrastructure — it publishes its own writes in-process. Set `SUPABASE_URL` and `SUPABASE_SERVICE_KEY` to additionally fan events across multiple API instances via Supabase Realtime; unset, that path is simply skipped.
+
+**Presence** — `user_presence` tracks who is online and who is on site. Presence is a claim with an expiry rather than a flag, because a browser that crashes never sends "offline"; a lapsed heartbeat reads as offline regardless of the stored status, and a sweep settles stale rows.
 
 **Disputes** — either party can raise one, which freezes the escrow hold. Only O.D.C can settle it, releasing to the worker or refunding the venue.
 
@@ -112,10 +118,10 @@ The admin dashboard is deliberately not discoverable from the public app — no 
 ## Tests and CI
 
 ```bash
-cd server && npm test        # 120 tests against a local Postgres
+cd server && npm test        # 131 tests against a local Postgres
 ```
 
-The suite covers escrow safety (no double-pay, no overdraft, ownership), OTP replay and account-enumeration resistance, dispute freezes, the shift lifecycle, and treasury reconciliation.
+The suite covers escrow safety (no double-pay, no overdraft, ownership), OTP replay and account-enumeration resistance, dispute freezes, the shift lifecycle, treasury reconciliation, and real-time delivery — including that an event never reaches a connection outside its audience, and that a closed stream releases its listener.
 
 > The suite **deletes every row in every table**, so it refuses to run against anything that is not localhost.
 
@@ -147,4 +153,4 @@ scripts/          CI checks, runnable locally
 
 ## Not built yet
 
-Real SMS delivery (Twilio), WebSocket chat (currently polling), automated ID verification against DigiLocker/Aadhaar APIs, native iOS/Android apps, per-city fee variants, live payment-rail settlement (escrow is modelled and enforced, but no money actually moves through a PSP).
+Real SMS delivery (Twilio), automated ID verification against DigiLocker/Aadhaar APIs, native iOS/Android apps, per-city fee variants, live payment-rail settlement (escrow is modelled and enforced, but no money actually moves through a PSP).

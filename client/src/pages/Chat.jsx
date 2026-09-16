@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useI18n } from '../i18n';
 import { chat } from '../apiEndpoints';
+import { useLiveEvents } from '../useLiveEvents';
 import { Card, EmptyState, toast } from '../ui';
 
 /**
@@ -11,7 +12,8 @@ import { Card, EmptyState, toast } from '../ui';
  * with how the rest of the app talks to the server; the interval only runs
  * while a thread is open.
  */
-const POLL_MS = 8000;
+// Safety net only — see useLiveEvents below.
+const POLL_MS = 60_000;
 
 export default function Chat() {
   const { t } = useI18n();
@@ -54,9 +56,20 @@ export default function Chat() {
       return undefined;
     }
     loadMessages(activeId);
+    // Polling is the fallback, not the mechanism: live events below deliver
+    // new messages immediately, and this only catches anything missed while
+    // the stream was reconnecting.
     const id = setInterval(() => loadMessages(activeId), POLL_MS);
     return () => clearInterval(id);
   }, [activeId, loadMessages]);
+
+  useLiveEvents({
+    'chat.message': (evt) => {
+      if (evt.conversationId === activeId) loadMessages(activeId);
+      // Refresh the sidebar either way so unread counts move in real time.
+      loadConversations();
+    },
+  });
 
   // Keep the newest message in view as the thread grows.
   useEffect(() => {

@@ -32,6 +32,13 @@ export const PORT = Number(process.env.PORT || 4000);
 export const DATABASE_URL = process.env.DATABASE_URL || 'postgresql://localhost:5432/odc';
 export const DB_POOL_MAX = Number(process.env.DB_POOL_MAX || 8);
 
+// Optional. Only needed to fan real-time events across multiple API
+// instances; a single instance is fully real-time without them.
+// SUPABASE_SERVICE_KEY bypasses RLS entirely — it is a server-only secret and
+// must never reach the client bundle.
+export const SUPABASE_URL = process.env.SUPABASE_URL || '';
+export const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_KEY || '';
+
 export function uid(prefix) {
   return `${prefix}_${crypto.randomBytes(6).toString('hex')}`;
 }

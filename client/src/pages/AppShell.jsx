@@ -6,6 +6,7 @@ import { Icon } from '../icons';
 import { Button, Switch } from '../components/ui';
 import { toast, usePushRegister, useNow, timeLeft } from '../ui';
 import { useI18n } from '../i18n';
+import { useLiveEvents } from '../useLiveEvents';
 import { LanguageToggle, ThemeToggle } from '../components/LanguageToggle';
 import { Bell } from 'lucide-react';
 
@@ -71,6 +72,13 @@ export default function AppShell() {
     const t = setInterval(() => { loadMine(); loadNotifs(); }, 45000);
     return () => clearInterval(t);
   }, [loadMine, loadNotifs]);
+
+  // The bell and the shift list update the moment the server knows.
+  useLiveEvents({
+    notification: () => loadNotifs(),
+    'shift.response': () => loadMine(),
+    'shift.updated': () => loadMine(),
+  });
 
   const toggleFree = async () => {
     const next = !user.available;

@@ -4,6 +4,8 @@ import { initDatabase } from './db.js';
 import { configurePush } from './notify.js';
 import { startJobs } from './jobs.js';
 import { ensureAdmin, demoSeedAllowed } from './seed.js';
+import { startRealtime } from './realtime.js';
+import { sweepPresence } from './presence.js';
 
 async function initDatabaseWithRetry() {
   const MAX_ATTEMPTS = 6;
@@ -49,6 +51,13 @@ async function main() {
   await ensureAdmin();
   await configurePush();
   startJobs();
+
+  // Optional cross-instance fan-out; a no-op when unconfigured.
+  await startRealtime();
+
+  // Settle rows whose heartbeat lapsed (closed laptop, lost signal).
+  sweepPresence().catch(() => {});
+  setInterval(() => sweepPresence().catch(() => {}), 60_000).unref();
 
   if (demoSeedAllowed()) {
     const { seedDemo, seedTestAccounts } = await import('./seed.js');

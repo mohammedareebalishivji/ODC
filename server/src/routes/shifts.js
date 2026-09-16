@@ -5,6 +5,7 @@ import { authGuard, asyncH } from '../middleware.js';
 import { uid, nowIso, apiError, JWT_SECRET } from '../config.js';
 import { notifyUser, notifyMatchingWorkers } from '../notify.js';
 import { openHold } from '../escrow.js';
+import { publish, EVENT } from '../events.js';
 
 const router = Router();
 
@@ -243,6 +244,9 @@ router.post('/:id/respond',
       `INSERT INTO responses (id, shift_id, worker_id, kind, amount, status, created_at) VALUES ($1,$2,$3,$4,$5,'pending',$6)`,
       id, shift.id, req.user.id, kind, amountN, nowIso()
     );
+    publish(EVENT.SHIFT_RESPONSE, [shift.manager_id], {
+      shiftId: shift.id, responseId: id, kind, amount: amountN,
+    });
     await notifyUser(shift.manager_id,
       'notif.newResponse.title',
       kind === 'accept' ? 'notif.newResponse.accepted' : 'notif.newResponse.countered',
